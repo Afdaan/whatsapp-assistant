@@ -120,13 +120,24 @@ async function startAssistant() {
         const remoteJid = msg.key.remoteJid;
         const msgId = msg.key.id;
 
-        // Handle View Once messages
-        const isViewOnce = !!(msg.message.viewOnceMessage || msg.message.viewOnceMessageV2);
+        // --- Message Unwrapping Logic ---
+        // Some messages are wrapped in ephemeralMessage or viewOnceMessage
+        const getRealMessage = (m) => {
+            if (m?.ephemeralMessage?.message) return getRealMessage(m.ephemeralMessage.message);
+            if (m?.viewOnceMessage?.message) return m.viewOnceMessage.message;
+            if (m?.viewOnceMessageV2?.message) return m.viewOnceMessageV2.message;
+            return m;
+        };
+
+        const realMsg = getRealMessage(msg.message);
+        const isViewOnce = !!(msg.message.viewOnceMessage || msg.message.viewOnceMessageV2 || msg.message.ephemeralMessage?.message?.viewOnceMessage || msg.message.ephemeralMessage?.message?.viewOnceMessageV2);
         const isProtocol = !!msg.message.protocolMessage;
         
         const myJid = sock.user.id.includes(':') ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : sock.user.id;
         const isFromMe = msg.key.fromMe;
-        const content = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+        
+        // Extract text content from the unwrapped message
+        const content = realMsg?.conversation || realMsg?.extendedTextMessage?.text || '';
 
         // Only cache actual content, not protocol messages
         if (!isProtocol) {
@@ -220,12 +231,18 @@ async function startAssistant() {
 
 async function handleViewOnce(sock, msg) {
     try {
-        const viewOnce = msg.message.viewOnceMessage || msg.message.viewOnceMessageV2;
-        const mediaMsg = viewOnce?.message;
+        const getRealMessage = (m) => {
+            if (m?.ephemeralMessage?.message) return getRealMessage(m.ephemeralMessage.message);
+            if (m?.viewOnceMessage?.message) return m.viewOnceMessage.message;
+            if (m?.viewOnceMessageV2?.message) return m.viewOnceMessageV2.message;
+            return m;
+        };
+
+        const mediaMsg = getRealMessage(msg.message);
         if (!mediaMsg) return;
 
         const mediaType = Object.keys(mediaMsg)[0];
-        if (!mediaType.includes('Message')) return;
+        if (!mediaType || !mediaType.includes('Message')) return;
         
         const realType = mediaType.replace('Message', '');
         const mimetype = mediaMsg[mediaType].mimetype || 'application/octet-stream';
