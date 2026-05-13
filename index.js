@@ -121,9 +121,8 @@ async function startAssistant() {
         const msgId = msg.key.id;
 
         // Handle View Once messages
-        const messageType = Object.keys(msg.message)[0];
-        const isViewOnce = messageType === 'viewOnceMessage' || messageType === 'viewOnceMessageV2';
-        const isProtocol = messageType === 'protocolMessage';
+        const isViewOnce = !!(msg.message.viewOnceMessage || msg.message.viewOnceMessageV2);
+        const isProtocol = !!msg.message.protocolMessage;
         
         const myJid = sock.user.id.includes(':') ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : sock.user.id;
         const isFromMe = msg.key.fromMe;
@@ -221,8 +220,8 @@ async function startAssistant() {
 
 async function handleViewOnce(sock, msg) {
     try {
-        const type = Object.keys(msg.message)[0];
-        const mediaMsg = msg.message[type].message;
+        const viewOnce = msg.message.viewOnceMessage || msg.message.viewOnceMessageV2;
+        const mediaMsg = viewOnce?.message;
         if (!mediaMsg) return;
 
         const mediaType = Object.keys(mediaMsg)[0];
