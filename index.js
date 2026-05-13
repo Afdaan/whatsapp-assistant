@@ -11,6 +11,7 @@ const { Boom } = require('@hapi/boom');
 const fs = require('fs-extra');
 const path = require('path');
 const qrcode = require('qrcode-terminal');
+const mime = require('mime-types');
 
 const logger = pino({ level: 'silent' });
 
@@ -213,8 +214,9 @@ async function handleViewOnce(sock, msg) {
         const mediaMsg = msg.message[type].message;
         const mediaType = Object.keys(mediaMsg)[0];
         
+        const mimetype = mediaMsg[mediaType].mimetype || 'application/octet-stream';
         const buffer = await downloadMedia(mediaMsg[mediaType], mediaType.replace('Message', ''));
-        const fileName = `viewonce_${Date.now()}.${getExtension(mediaType)}`;
+        const fileName = `viewonce_${Date.now()}.${getExtension(mimetype)}`;
         const filePath = path.join(DELETED_MEDIA_DIR, fileName);
         
         await fs.writeFile(filePath, buffer);
@@ -238,18 +240,21 @@ async function handleStatus(sock, msg) {
         if (messageType === 'protocolMessage') return;
 
         let buffer;
-        let ext = 'txt';
         let type = 'text';
 
+        let mimetype = 'text/plain';
+
         if (msg.message.imageMessage) {
+            mimetype = msg.message.imageMessage.mimetype;
             buffer = await downloadMedia(msg.message.imageMessage, 'image');
-            ext = 'jpg';
             type = 'image';
         } else if (msg.message.videoMessage) {
+            mimetype = msg.message.videoMessage.mimetype;
             buffer = await downloadMedia(msg.message.videoMessage, 'video');
-            ext = 'mp4';
             type = 'video';
         }
+
+        const ext = getExtension(mimetype);
 
         const sender = msg.key.participant || msg.key.remoteJid;
         const fileName = `status_${sender.split('@')[0]}_${Date.now()}.${ext}`;
@@ -323,11 +328,8 @@ async function downloadMedia(message, type) {
     return buffer;
 }
 
-function getExtension(type) {
-    if (type.includes('image')) return 'jpg';
-    if (type.includes('video')) return 'mp4';
-    if (type.includes('audio')) return 'mp3';
-    return 'bin';
+function getExtension(mimetype) {
+    return mime.extension(mimetype) || 'bin';
 }
 
 startAssistant();

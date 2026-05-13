@@ -1,0 +1,15 @@
+services:
+  whatsapp-assistant:
+    image: whatsapp-assistant:${TAG:-latest}
+    build: .
+    container_name: whatsapp-assistant
+    restart: unless-stopped
+    volumes:
+      - ./auth_info:/app/auth_info
+      - ./deleted_media:/app/deleted_media
+      - ./whitelist.json:/app/whitelist.json
+      - ./msg_cache.json:/app/msg_cache.json
+    environment:
+      - NODE_ENV=production
+    stdin_open: true # allows you to see QR code and interact if needed
+    tty: true
