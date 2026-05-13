@@ -217,6 +217,14 @@ async function startAssistant() {
         // --- Reply to View Once Experiment ---
         const contextInfo = realMsg?.extendedTextMessage?.contextInfo || realMsg?.imageMessage?.contextInfo || realMsg?.videoMessage?.contextInfo;
         const quotedMessage = contextInfo?.quotedMessage;
+        
+        if (isFromMe && quotedMessage) {
+            console.log(`\n💬 [DEBUG REPLY] You replied to a message.`);
+            console.log(`💬 [DEBUG REPLY] Quoted Message Keys:`, Object.keys(quotedMessage));
+            const qt = quotedMessage?.conversation || quotedMessage?.extendedTextMessage?.text || '';
+            console.log(`💬 [DEBUG REPLY] Quoted Text Content:`, qt.substring(0, 50));
+        }
+
         const quotedText = quotedMessage?.conversation || quotedMessage?.extendedTextMessage?.text || '';
         const isQuotedPlaceholder = quotedText.toLowerCase().includes('view once message') && quotedText.toLowerCase().includes('added privacy');
         
