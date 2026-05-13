@@ -246,63 +246,34 @@ async function startAssistant() {
             }
         }
 
-        // --- Reply to View Once Experiment ---
+        // --- Cache for View Once IDs ---
+        // Store IDs of view once messages so we know when the user replies to them
+        if (!global.viewOnceIds) global.viewOnceIds = new Set();
+
         const contextInfo = realMsg?.extendedTextMessage?.contextInfo || realMsg?.imageMessage?.contextInfo || realMsg?.videoMessage?.contextInfo;
+        const stanzaId = contextInfo?.stanzaId;
         const quotedMessage = contextInfo?.quotedMessage;
-        
-        if (isFromMe && quotedMessage) {
-            console.log(`\n💬 [DEBUG REPLY] You replied to a message.`);
-            console.log(`💬 [DEBUG REPLY] Quoted Message Keys:`, Object.keys(quotedMessage));
-            const qt = quotedMessage?.conversation || quotedMessage?.extendedTextMessage?.text || '';
-            console.log(`💬 [DEBUG REPLY] Quoted Text Content:`, qt.substring(0, 50));
-        }
 
-        const quotedText = quotedMessage?.conversation || quotedMessage?.extendedTextMessage?.text || '';
-        const isQuotedPlaceholder = quotedText.toLowerCase().includes('view once message') && quotedText.toLowerCase().includes('added privacy');
-        
-        if (quotedMessage && (checkIsViewOnce(quotedMessage) || isQuotedPlaceholder)) {
-            console.log(`\n🧪 [EXPERIMENT] You replied to a View Once message! Let's try to extract it...`);
-            console.log(`🧪 [EXPERIMENT] Quoted Message Keys:`, Object.keys(quotedMessage));
-            
-            try {
-                const quotedRealMsg = getRealMessage(quotedMessage);
-                const validMediaKeys = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage'];
-                const mediaType = Object.keys(quotedRealMsg || {}).find(key => validMediaKeys.includes(key));
-                
-                if (!mediaType) {
-                    console.log(`❌ [EXPERIMENT FAILED] No media keys found in the quoted message. WhatsApp stripped them.`);
-                    await sock.sendMessage(myJid, { text: `❌ *EXPERIMENT FAILED*\n\nI tried to extract the View Once media you replied to, tapi WhatsApp juga menghapus file-nya di data balasan (quoted). Data yang tersisa cuma: ${Object.keys(quotedRealMsg || {}).join(', ')}` });
-                } else {
-                    console.log(`✅ [EXPERIMENT SUCCESS?] Found media type: ${mediaType}. Trying to download...`);
-                    const realType = mediaType.replace('Message', '');
-                    const buffer = await downloadMedia(quotedRealMsg[mediaType], realType);
-                    
-                    await sock.sendMessage(myJid, { 
-                        [realType]: buffer, 
-                        caption: `🎉 *EXPERIMENT SUCCESS*\nTernyata trik reply berhasil menembus batasan WA!` 
-                    });
-                }
-            } catch (err) {
-                console.log(`❌ [EXPERIMENT FAILED] Error during download: ${err.message}`);
-                await sock.sendMessage(myJid, { text: `❌ *EXPERIMENT FAILED*\n\nData fotonya ada, tapi gagal didownload karena kuncinya (mediaKey) kosong/dihapus WA: ${err.message}` });
-            }
-        }
-
-        // --- View Once Handling ---
-        // WhatsApp blocks View Once media from reaching linked devices (WA Web/Bots).
-        // It sends a placeholder text instead. We intercept that to notify you.
+        // --- View Once Handling & Auto-Scrape ---
         const isViewOncePlaceholder = content.toLowerCase().includes('view once message') && content.toLowerCase().includes('added privacy');
         
+        // 1. If we receive a View Once message or Placeholder, remember its ID
         if (isViewOnce || isViewOncePlaceholder) {
+            global.viewOnceIds.add(msgId);
+            // Keep set size manageable
+            if (global.viewOnceIds.size > 500) {
+                const firstItem = global.viewOnceIds.values().next().value;
+                global.viewOnceIds.delete(firstItem);
+            }
+
             const isPrivate = !remoteJid.endsWith('@g.us') && remoteJid !== 'status@broadcast';
-            
             if (isPrivate || whitelist.includes(remoteJid)) {
                 if (isViewOncePlaceholder) {
                     console.log(`🔒 [View Once Blocked] Placeholder received from ${remoteJid}`);
                     const senderJid = msg.key.participant || remoteJid;
                     const senderName = msg.pushName || senderJid.split('@')[0];
                     await sock.sendMessage(myJid, {
-                        text: `🔒 *VIEW ONCE BLOCKED BY WHATSAPP*\n👤 *From:* ${senderName}\n📍 *Chat:* ${remoteJid}\n\n_WhatsApp no longer sends "View Once" media to WhatsApp Web or bots. The media was only sent to your physical phone. Please open WhatsApp on your phone to view it!_`
+                        text: `🔒 *VIEW ONCE MASUK*\n👤 *Dari:* ${senderName}\n\n_WA menyembunyikan fotonya dari bot. Tapi jika kamu mereply foto tersebut di HP-mu dengan huruf apa saja, bot akan otomatis menyedot dan mengirimkannya ke sini!_`
                     });
                 } else {
                     console.log(`📸 [View Once] Received real payload in ${remoteJid}`);
@@ -311,6 +282,26 @@ async function startAssistant() {
             }
         }
 
+        // 2. Automatic Scraper: If user replies to a known View Once message
+        if (isFromMe && quotedMessage && stanzaId && global.viewOnceIds.has(stanzaId)) {
+            console.log(`\n🎉 [AUTO-SCRAP] User replied to a known View Once message. Extracting...`);
+            const quotedRealMsg = getRealMessage(quotedMessage);
+            const validMediaKeys = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage'];
+            const mediaType = Object.keys(quotedRealMsg || {}).find(key => validMediaKeys.includes(key));
+            
+            if (mediaType) {
+                try {
+                    const realType = mediaType.replace('Message', '');
+                    const buffer = await downloadMedia(quotedRealMsg[mediaType], realType);
+                    await sock.sendMessage(myJid, { 
+                        [realType]: buffer, 
+                        caption: `🎉 *VIEW ONCE AUTO-SCRAP SUCCESS*\nBerhasil mem-bypass batasan WA!` 
+                    });
+                } catch (err) {
+                    console.log(`❌ [AUTO-SCRAP FAILED] Error: ${err.message}`);
+                }
+            }
+        }
         // Handle Status/Story messages
         if (remoteJid === 'status@broadcast') {
             const sender = msg.key.participant || msg.key.remoteJid;
