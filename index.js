@@ -154,6 +154,7 @@ async function startAssistant() {
         
         // Extract text content from the unwrapped message
         const content = realMsg?.conversation || realMsg?.extendedTextMessage?.text || '';
+        const contextInfo = realMsg?.extendedTextMessage?.contextInfo || realMsg?.imageMessage?.contextInfo || realMsg?.videoMessage?.contextInfo;
 
         // Only cache actual content, not protocol messages
         if (!isProtocol) {
@@ -238,7 +239,6 @@ async function startAssistant() {
                 await sock.sendMessage(myJid, { text: '🏓 Pong! Assistant is active.' });
             } else if (cmd === 'scrap') {
                 // Manual scraping attempt for quoted messages
-                const contextInfo = realMsg?.extendedTextMessage?.contextInfo || realMsg?.imageMessage?.contextInfo || realMsg?.videoMessage?.contextInfo;
                 const quotedMessage = contextInfo?.quotedMessage;
                 
                 if (!quotedMessage) {
@@ -271,7 +271,6 @@ async function startAssistant() {
             }
         }
 
-        const contextInfo = realMsg?.extendedTextMessage?.contextInfo || realMsg?.imageMessage?.contextInfo || realMsg?.videoMessage?.contextInfo;
         const stanzaId = contextInfo?.stanzaId;
         const quotedMessage = contextInfo?.quotedMessage;
 
