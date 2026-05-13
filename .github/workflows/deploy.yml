@@ -9,11 +9,14 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 10
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          # Path where the app is deployed on the server
-          path: /opt/whatsapp-assistant
+      - name: Update code
+        run: |
+          cd /opt/whatsapp-assistant
+          echo "::group::Syncing Repository"
+          # Fetch latest and reset to match origin exactly
+          git fetch origin main
+          git reset --hard origin/main
+          echo "::endgroup::"
 
       - name: Deploy with Docker Compose
         run: |
