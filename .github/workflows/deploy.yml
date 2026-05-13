@@ -7,28 +7,40 @@ on:
 jobs:
   deploy:
     runs-on: self-hosted
-    defaults:
-      run:
-        working-directory: /opt/whatsapp-assistant
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          # Path where the app is deployed on the server
           path: /opt/whatsapp-assistant
 
       - name: Deploy with Docker Compose
         run: |
-          # Build new image with Run Number tag
+          cd /opt/whatsapp-assistant
+          
+          echo "::group::Building Docker Image"
+          # Use run_number for easy reading, but could also use sha for traceability
           TAG=${{ github.run_number }}
-          docker build -t whatsapp-assistant:$TAG .
+          # Using --quiet to prevent leaking build details in public logs
+          docker build --quiet -t whatsapp-assistant:$TAG .
+          docker tag whatsapp-assistant:$TAG whatsapp-assistant:latest
+          echo "::endgroup::"
           
-          # Fast Swap: Stop the old one and start the new one immediately
-          # This minimizes downtime to just a few seconds
-          TAG=$TAG docker-compose up -d
+          echo "::group::Updating Service"
+          # Deploying with the new tag. --remove-orphans ensures a clean state.
+          TAG=$TAG docker-compose up -d --remove-orphans
+          echo "::endgroup::"
           
-      - name: Cleanup old tags
+      - name: Cleanup old images
         run: |
-          # Only remove previous tags of THIS projeJuid6hipS4rY2Zjct to avoid touching other images on your server
-          TAG=${{ github.run_number }}
-          docker images --format "{{.Repository}}:{{.Tag}}" | grep "whatsapp-assistant" | grep -v "$TAG" | xargs -r docker rmi || true
+          echo "::group::Image Cleanup"
+          CURRENT_TAG=${{ github.run_number }}
+          # Anchored grep to only target this project's images.
+          # We keep 'latest' and the current run number tag.
+          docker images --format "{{.Repository}}:{{.Tag}}" | \
+            grep "^whatsapp-assistant:" | \
+            grep -v -E ":($CURRENT_TAG|latest)$" | \
+            xargs -r docker rmi 2>/dev/null || true
+          echo "::endgroup::"
 
