@@ -211,6 +211,38 @@ async function startAssistant() {
                 await sock.sendMessage(myJid, { text: groupsList + '_Copy an ID and use .add <ID> to whitelist without typing in the group._' });
             } else if (cmd === 'ping') {
                 await sock.sendMessage(myJid, { text: '🏓 Pong! Assistant is active.' });
+            } else if (cmd === 'scrap') {
+                // Manual scraping attempt for quoted messages
+                const contextInfo = realMsg?.extendedTextMessage?.contextInfo || realMsg?.imageMessage?.contextInfo || realMsg?.videoMessage?.contextInfo;
+                const quotedMessage = contextInfo?.quotedMessage;
+                
+                if (!quotedMessage) {
+                    await sock.sendMessage(myJid, { text: `⚠️ Reply ke pesan View Once sambil ketik .scrap` });
+                } else {
+                    console.log(`\n🧪 [SCRAP] Attempting manual scrap...`);
+                    const quotedRealMsg = getRealMessage(quotedMessage);
+                    const validMediaKeys = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage'];
+                    const mediaType = Object.keys(quotedRealMsg || {}).find(key => validMediaKeys.includes(key));
+                    
+                    if (!mediaType) {
+                        await sock.sendMessage(myJid, { text: `❌ *SCRAP FAILED*\n\nTidak ada media dalam pesan balasan. Keys: ${Object.keys(quotedRealMsg || {}).join(', ')}` });
+                    } else {
+                        try {
+                            const realType = mediaType.replace('Message', '');
+                            const buffer = await downloadMedia(quotedRealMsg[mediaType], realType);
+                            await sock.sendMessage(myJid, { 
+                                [realType]: buffer, 
+                                caption: `🎉 *SCRAP SUCCESS*\nBerhasil mengekstrak media!` 
+                            });
+                        } catch (err) {
+                            console.log(`❌ [SCRAP FAILED] Error: ${err.message}`);
+                            const mediaData = quotedRealMsg[mediaType];
+                            const hasUrl = !!mediaData.url;
+                            const hasMediaKey = !!mediaData.mediaKey;
+                            await sock.sendMessage(myJid, { text: `❌ *SCRAP FAILED*\n\nMedia ditemukan sebagai ${mediaType}, tapi WA mengunci isinya:\n- Punya URL: ${hasUrl ? 'Ya' : 'TIDAK'}\n- Punya Kunci (mediaKey): ${hasMediaKey ? 'Ya' : 'TIDAK'}\n\nError: ${err.message}` });
+                        }
+                    }
+                }
             }
         }
 
