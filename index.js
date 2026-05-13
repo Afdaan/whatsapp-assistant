@@ -144,15 +144,7 @@ async function startAssistant() {
 
         const realMsg = getRealMessage(msg.message);
         
-        // --- DEBUG LOG ---
-        const contentStr = realMsg?.conversation || realMsg?.extendedTextMessage?.text || '';
-        if (contentStr.includes('view once') || msg.message.viewOnceMessage || msg.message.viewOnceMessageV2) {
-            console.log(`\n🔍 [DEBUG] SUSPECTED VIEW ONCE FROM ${msg.key.remoteJid}`);
-            console.log(`🔍 [DEBUG] Raw keys:`, Object.keys(msg.message));
-            if (msg.message.extendedTextMessage) {
-                console.log(`🔍 [DEBUG] extendedTextMessage text:`, msg.message.extendedTextMessage.text);
-            }
-        }
+
 
         const isViewOnce = checkIsViewOnce(msg.message);
         const isProtocol = !!msg.message.protocolMessage;
@@ -181,13 +173,27 @@ async function startAssistant() {
             
             if (args[1]) {
                 if (args[1].includes('@')) {
-                    target = args[1]; // Already a JID
+                    target = args[1]; // Already a JID or LID
                 } else {
                     target = args[1].replace(/[^0-9]/g, '') + '@s.whatsapp.net'; // Number to JID
                 }
+            } else if (contextInfo?.participant) {
+                // If replying to a message (e.g. replying to a status), extract the hidden LID/JID
+                target = contextInfo.participant;
+            } else {
+                const quotedRealMsg = getRealMessage(contextInfo?.quotedMessage);
+                if (quotedRealMsg) target = remoteJid; // Fallback if replying in private chat
             }
 
             if (cmd === 'add') {
+                if (!target) {
+                    await sock.sendMessage(myJid, { text: `⚠️ Penggunaan salah. Ketik .add <nomor> atau reply pesan orangnya lalu ketik .add` });
+                    return;
+                }
+                
+                // Clean the multi-device suffix just in case
+                target = target.includes(':') ? target.split(':')[0] + '@' + target.split('@')[1] : target;
+
                 if (!whitelist.includes(target)) {
                     whitelist.push(target);
                     saveWhitelist();
@@ -200,8 +206,27 @@ async function startAssistant() {
                 saveWhitelist();
                 await sock.sendMessage(myJid, { text: `❌ Removed *${target}* from whitelist.` });
             } else if (cmd === 'list' || cmd === 'whitelist') {
-                const listText = whitelist.length > 0 ? whitelist.map(id => `- ${id}`).join('\n') : 'Whitelist is empty.';
-                await sock.sendMessage(myJid, { text: `📋 *Whitelist:*\n${listText}\n\n_Note: Use .add <JID> or .add <number>_` });
+                const displayList = whitelist.filter(id => id !== 'all_status');
+                const listText = displayList.length > 0 ? displayList.map(id => `- ${id}`).join('\n') : 'Whitelist is empty.';
+                const globalStatus = whitelist.includes('all_status') ? '✅ ON' : '❌ OFF';
+                
+                await sock.sendMessage(myJid, { text: `📋 *VIP Whitelist:*\n${listText}\n\n🌐 *Global Status:* ${globalStatus}\n\n_Note: Use .add <JID> | .status on/off_` });
+            } else if (cmd === 'status') {
+                const action = args[1]?.toLowerCase();
+                if (action === 'on') {
+                    if (!whitelist.includes('all_status')) {
+                        whitelist.push('all_status');
+                        saveWhitelist();
+                    }
+                    await sock.sendMessage(myJid, { text: `✅ *Global Status Monitor is ON.*\nBot akan memantau semua status yang dihapus.` });
+                } else if (action === 'off') {
+                    whitelist = whitelist.filter(id => id !== 'all_status');
+                    saveWhitelist();
+                    await sock.sendMessage(myJid, { text: `❌ *Global Status Monitor is OFF.*\nBot hanya memantau status dari VIP Whitelist.` });
+                } else {
+                    const status = whitelist.includes('all_status') ? 'ON' : 'OFF';
+                    await sock.sendMessage(myJid, { text: `ℹ️ Global Status is currently *${status}*.\nKetik *.status on* atau *.status off*` });
+                }
             } else if (cmd === 'groups') {
                 const groups = await sock.groupFetchAllParticipating();
                 let groupsList = '👥 *Your Groups:*\n\n';
@@ -294,17 +319,10 @@ async function startAssistant() {
         // Handle Status/Story messages
         if (remoteJid === 'status@broadcast') {
             const sender = msg.key.participant || msg.key.remoteJid;
-            const cleanSender = sender ? (sender.includes(':') ? sender.split(':')[0] + '@s.whatsapp.net' : sender) : null;
+            const cleanSender = sender ? (sender.includes(':') ? sender.split(':')[0] + '@' + sender.split('@')[1] : sender) : null;
             
-            console.log(`\n🕵️ [DEBUG STATUS] Received status!`);
-            console.log(`🕵️ [DEBUG STATUS] Raw Sender:`, sender);
-            console.log(`🕵️ [DEBUG STATUS] Clean Sender:`, cleanSender);
-            console.log(`🕵️ [DEBUG STATUS] Is in whitelist?:`, whitelist.includes(cleanSender));
-            console.log(`🕵️ [DEBUG STATUS] Current Whitelist:`, whitelist);
-            
-            if (cleanSender && whitelist.includes(cleanSender)) {
-                console.log(`🌟 [Status] New status from ${msg.pushName || cleanSender}`);
-                await handleStatus(sock, msg);
+            if (whitelist.includes('all_status') || (cleanSender && whitelist.includes(cleanSender))) {
+                console.log(`🌟 [Status] New status from ${msg.pushName || cleanSender} (Tracked in RAM)`);
             }
         }
 
@@ -317,12 +335,12 @@ async function startAssistant() {
             const originalMsg = msgCache.get(revokedId);
             const participant = originalMsg?.key.participant || revokedRemoteJid;
             
-            // Normalize participant JID (remove multi-device suffix e.g., :1, :2)
-            const cleanParticipant = participant ? (participant.includes(':') ? participant.split(':')[0] + '@s.whatsapp.net' : participant) : null;
+            // Normalize participant JID (preserve @lid or @s.whatsapp.net)
+            const cleanParticipant = participant ? (participant.includes(':') ? participant.split(':')[0] + '@' + participant.split('@')[1] : participant) : null;
 
             // Logic: Auto-recover if private chat, or check whitelist for groups/status
             const isPrivate = !revokedRemoteJid.endsWith('@g.us') && revokedRemoteJid !== 'status@broadcast';
-            const isWhitelisted = whitelist.includes(revokedRemoteJid) || (cleanParticipant && whitelist.includes(cleanParticipant));
+            const isWhitelisted = whitelist.includes('all_status') || whitelist.includes(revokedRemoteJid) || (cleanParticipant && whitelist.includes(cleanParticipant));
 
             if (isPrivate || isWhitelisted) {
                 console.log(`🗑️ [Anti-Delete] Message revocation detected in ${revokedRemoteJid}`);
@@ -398,40 +416,7 @@ async function handleViewOnce(sock, msg) {
     }
 }
 
-async function handleStatus(sock, msg) {
-    try {
-        const messageType = Object.keys(msg.message)[0];
-        if (messageType === 'protocolMessage') return;
 
-        let buffer;
-        let type = 'text';
-
-        let mimetype = 'text/plain';
-
-        if (msg.message.imageMessage) {
-            mimetype = msg.message.imageMessage.mimetype;
-            buffer = await downloadMedia(msg.message.imageMessage, 'image');
-            type = 'image';
-        } else if (msg.message.videoMessage) {
-            mimetype = msg.message.videoMessage.mimetype;
-            buffer = await downloadMedia(msg.message.videoMessage, 'video');
-            type = 'video';
-        }
-
-        const ext = getExtension(mimetype);
-
-        const sender = msg.key.participant || msg.key.remoteJid;
-        const fileName = `status_${sender.split('@')[0]}_${Date.now()}.${ext}`;
-        const filePath = path.join(DELETED_MEDIA_DIR, fileName);
-
-        if (buffer) {
-            await fs.writeFile(filePath, buffer);
-            console.log(`✅ [Status] Saved ${type} from ${sender.split('@')[0]}`);
-        }
-    } catch (e) {
-        console.error('Failed to handle status:', e);
-    }
-}
 
 async function handleAntiDelete(sock, revokeMsg, revokedId) {
     const originalMsg = msgCache.get(revokedId);
@@ -462,12 +447,34 @@ async function handleAntiDelete(sock, revokeMsg, revokedId) {
             }
         }
 
-        let header = `⚠️ *MESSAGE DELETED* ⚠️\n`;
-        header += `👤 *Sender:* ${senderName} (${senderNumber})\n`;
-        if (isGroup) {
+        const isStatus = originalMsg.key.remoteJid === 'status@broadcast';
+        let header = isStatus ? `🌟 *STORY DELETED* 🌟\n` : `⚠️ *MESSAGE DELETED* ⚠️\n`;
+        
+        header += `👤 *Sender:* ${senderName} ${!senderNumber.includes('@') ? `(${senderNumber})` : ''}\n`;
+        
+        if (isGroup && !isStatus) {
             header += `📍 *Group:* ${groupName}\n`;
         }
-        header += `🕒 *Time:* ${new Date(originalMsg.messageTimestamp * 1000).toLocaleString()}\n\n`;
+        
+        const postDate = new Date(originalMsg.messageTimestamp * 1000);
+        header += `🕒 *Time:* ${postDate.toLocaleString()}\n`;
+        
+        if (isStatus) {
+            const deleteTime = Math.floor(Date.now() / 1000);
+            const diffSeconds = Math.max(0, deleteTime - originalMsg.messageTimestamp);
+            const diffMins = Math.floor(diffSeconds / 60);
+            const diffHrs = Math.floor(diffMins / 60);
+            
+            let duration = '';
+            if (diffHrs > 0) duration += `${diffHrs}h `;
+            if (diffMins % 60 > 0) duration += `${diffMins % 60}m `;
+            if (diffHrs === 0 && diffMins === 0) duration = `${diffSeconds}s`;
+            else if (diffHrs === 0) duration += `${diffSeconds % 60}s`;
+            
+            header += `⏱️ *Deleted After:* ${duration.trim()}\n`;
+        }
+        
+        header += `\n`;
         
         let content = { text: header };
         

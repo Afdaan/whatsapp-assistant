@@ -4,10 +4,10 @@ A Node.js-based WhatsApp assistant that helps you monitor deleted messages, save
 
 ## Features
 
-- **Anti-Delete**: Recovers deleted messages (text, images, and videos) and forwards them to your private chat.
-- **View Once Saver**: Intercepts "View Once" media and saves a permanent copy.
-- **Status/Story Saver**: Automatically captures statuses from whitelisted contacts and saves them to `deleted_media/`.
-- **Whitelist System**: Only monitors specific chats/contacts to keep your logs clean and relevant.
+- **Anti-Delete**: Recovers deleted messages (text, images, and videos) and forwards them to your private chat ("Message Yourself"). Features a zero-storage architecture (media is downloaded dynamically from Meta's CDN upon deletion).
+- **View Once Scraper**: Automatically bypasses Meta's restrictions on Companion Devices. By simply replying to a "View Once" placeholder message, the assistant exploits a synchronization loophole to automatically extract and download the hidden media.
+- **Story/Status Tracker**: Tracks statuses from VIP contacts. Calculates exact survival time before deletion and forwards deleted stories with full analytics.
+- **Global Status Monitor**: A "God Mode" toggle to monitor ALL status revocations globally, completely bypassing Meta's `@lid` privacy masking.
 
 ## Getting Started
 
@@ -28,43 +28,36 @@ Using Docker is recommended because it keeps all dependencies isolated and manag
    docker logs -f whatsapp-assistant
    ```
 
-## Volume Mounting (Persistence)
-When using Docker, we use **Volumes** to mount the following files/folders from your computer into the container:
-- `auth_info/`: Keeps you logged in after restarts.
-- `deleted_media/`: Where your saved photos/videos are stored.
-- `whitelist.json`: Your monitoring settings.
-- `msg_cache.json`: The message memory.
-
-This ensures that even if you delete the container or update the image, your assistant won't "forget" your settings or log you out.
-
-## CI/CD (Self-Hosted Runner)
-The project includes a GitHub Actions workflow in `.github/workflows/deploy.yml`. 
-If you have a **self-hosted GitHub runner** set up on your server:
-1. Every time you `push` to the `main` branch, the runner will automatically pull the new code.
-2. It will run `docker-compose up --build -d` to update the assistant without losing your session (thanks to the volume mounting).
-
 ## Commands
 
-Use these commands directly in any WhatsApp chat to manage your monitoring list. **Only you (the account owner) can trigger these commands.**
+Use these commands directly in any WhatsApp chat. **Only you (the account owner) can trigger these commands.** You can execute them in your "Message Yourself" chat to remain hidden.
 
+### Whitelist & Status Management
 | Command | Description |
 |---------|-------------|
 | `.ping` | Check if the assistant is online and responding. |
-| `.groups` | List all your groups with their IDs (JIDs). |
-| `.add` | Adds the current chat to the whitelist. |
-| `.add 6281xx` | Adds a specific number to the whitelist. |
-| `.add xxxx@g.us` | Adds a group by ID (see `.groups` for IDs). |
+| `.list` | Displays your VIP Whitelist and the state of the Global Status monitor. |
+| `.add` | Adds the current chat to the whitelist. You can also **reply to a Status/Message** with `.add` to whitelist the sender instantly. |
+| `.add 6281xx` | Adds a specific number to the whitelist (always use the country code). |
+| `.add xxxx@lid` | Manually adds a Linked Device ID to the whitelist. |
 | `.del` | Removes the current chat from the whitelist. |
-| `.list` | Displays a list of all whitelisted JIDs (IDs). |
+| `.status on` | Turns ON the Global Status Monitor (monitors all contacts, bypassing LID restrictions). |
+| `.status off`| Turns OFF the Global Status Monitor (reverts to VIP Whitelist only). |
 
-### Important Tips
-- **To Save Statuses**: Open a private chat with the person whose status you want to save, and type `.add`.
-- **Deleted Media**: All intercepted files are stored in the `deleted_media/` folder in this project directory.
-- **Memory**: The assistant captures messages in real-time. It cannot recover messages that were deleted *before* you started the script.
+### View Once Interception
+| Command | Description |
+|---------|-------------|
+| *(Auto)* | When you see a "View Once" placeholder, simply **reply to it with any text** (e.g., "a"). The bot detects the hidden `viewOnce` flag and extracts the media automatically. |
+| `.scrap` | Manual fallback command. Reply to a "View Once" placeholder with `.scrap` to forcibly attempt extraction. |
+| `.groups`| List all your groups with their IDs (JIDs). |
+
+## Architectural Details
+- **Zero-Storage Statuses**: Statuses are tracked entirely in RAM (`msgCache`). Media is only downloaded from Meta's CDN when a `REVOKE` (delete) event is detected. This prevents server disk bloat.
+- **Linked Device Masking**: Meta hides actual phone numbers in Status broadcasts using cryptographic `@lid` (Linked Device IDs). Use `.status on` or reply to a status with `.add` to easily circumvent this masking.
+- **View Once Loophole**: WhatsApp Web/Linked Devices are blocked from opening View Once media. This bot exploits a protocol behavior where quoting (replying to) the placeholder message from your primary phone temporarily exposes the decrypted payload to companion devices.
 
 ## Project Structure
 - `index.js`: Main application logic.
-- `auth_info/`: Stores your session data (do not delete unless you want to re-scan).
-- `deleted_media/`: Where all saved media files are stored.
-- `whitelist.json`: List of monitored chats.
-- `baileys_store.json`: Cached message store.
+- `auth_info/`: Stores your session data (Docker mounted).
+- `deleted_media/`: Where View Once media files are stored locally.
+- `whitelist.json`: List of monitored VIP chats (Docker mounted).
