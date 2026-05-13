@@ -294,8 +294,10 @@ async function startAssistant() {
         // Handle Status/Story messages
         if (remoteJid === 'status@broadcast') {
             const sender = msg.key.participant || msg.key.remoteJid;
-            if (whitelist.includes(sender)) {
-                console.log(`🌟 [Status] New status from ${msg.pushName || sender}`);
+            const cleanSender = sender ? (sender.includes(':') ? sender.split(':')[0] + '@s.whatsapp.net' : sender) : null;
+            
+            if (cleanSender && whitelist.includes(cleanSender)) {
+                console.log(`🌟 [Status] New status from ${msg.pushName || cleanSender}`);
                 await handleStatus(sock, msg);
             }
         }
@@ -308,10 +310,13 @@ async function startAssistant() {
 
             const originalMsg = msgCache.get(revokedId);
             const participant = originalMsg?.key.participant || revokedRemoteJid;
+            
+            // Normalize participant JID (remove multi-device suffix e.g., :1, :2)
+            const cleanParticipant = participant ? (participant.includes(':') ? participant.split(':')[0] + '@s.whatsapp.net' : participant) : null;
 
             // Logic: Auto-recover if private chat, or check whitelist for groups/status
             const isPrivate = !revokedRemoteJid.endsWith('@g.us') && revokedRemoteJid !== 'status@broadcast';
-            const isWhitelisted = whitelist.includes(revokedRemoteJid) || whitelist.includes(participant);
+            const isWhitelisted = whitelist.includes(revokedRemoteJid) || (cleanParticipant && whitelist.includes(cleanParticipant));
 
             if (isPrivate || isWhitelisted) {
                 console.log(`🗑️ [Anti-Delete] Message revocation detected in ${revokedRemoteJid}`);
