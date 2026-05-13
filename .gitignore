@@ -1,0 +1,6 @@
+node_modules
+auth_info
+deleted_media
+baileys_store.json
+msg_cache.json
+npm-debug.log
