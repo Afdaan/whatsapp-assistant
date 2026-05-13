@@ -1,0 +1,8 @@
+node_modules
+auth_info
+deleted_media
+msg_cache.json
+whitelist.json
+.git
+.github
+*.log
