@@ -20,7 +20,7 @@ fs.ensureDirSync(DELETED_MEDIA_DIR);
 
 const WHITELIST_PATH = path.join(__dirname, 'whitelist.json');
 let whitelist = [];
-if (fs.existsSync(WHITELIST_PATH)) {
+if (fs.existsSync(WHITELIST_PATH) && fs.lstatSync(WHITELIST_PATH).isFile()) {
     whitelist = fs.readJsonSync(WHITELIST_PATH);
 }
 
@@ -33,7 +33,7 @@ const MSG_CACHE_PATH = path.join(__dirname, 'msg_cache.json');
 let msgCache = new Map();
 const MAX_CACHE_SIZE = 2000;
 
-if (fs.existsSync(MSG_CACHE_PATH)) {
+if (fs.existsSync(MSG_CACHE_PATH) && fs.lstatSync(MSG_CACHE_PATH).isFile()) {
     try {
         const data = fs.readJsonSync(MSG_CACHE_PATH);
         msgCache = new Map(Object.entries(data));
