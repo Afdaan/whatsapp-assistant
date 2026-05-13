@@ -214,6 +214,38 @@ async function startAssistant() {
             }
         }
 
+        // --- Reply to View Once Experiment ---
+        const contextInfo = realMsg?.extendedTextMessage?.contextInfo || realMsg?.imageMessage?.contextInfo || realMsg?.videoMessage?.contextInfo;
+        const quotedMessage = contextInfo?.quotedMessage;
+        
+        if (quotedMessage && checkIsViewOnce(quotedMessage)) {
+            console.log(`\n🧪 [EXPERIMENT] You replied to a View Once message! Let's try to extract it...`);
+            console.log(`🧪 [EXPERIMENT] Quoted Message Keys:`, Object.keys(quotedMessage));
+            
+            try {
+                const quotedRealMsg = getRealMessage(quotedMessage);
+                const validMediaKeys = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage'];
+                const mediaType = Object.keys(quotedRealMsg || {}).find(key => validMediaKeys.includes(key));
+                
+                if (!mediaType) {
+                    console.log(`❌ [EXPERIMENT FAILED] No media keys found in the quoted message. WhatsApp stripped them.`);
+                    await sock.sendMessage(myJid, { text: `❌ *EXPERIMENT FAILED*\n\nI tried to extract the View Once media you replied to, tapi WhatsApp juga menghapus file-nya di data balasan (quoted). Data yang tersisa cuma: ${Object.keys(quotedRealMsg || {}).join(', ')}` });
+                } else {
+                    console.log(`✅ [EXPERIMENT SUCCESS?] Found media type: ${mediaType}. Trying to download...`);
+                    const realType = mediaType.replace('Message', '');
+                    const buffer = await downloadMedia(quotedRealMsg[mediaType], realType);
+                    
+                    await sock.sendMessage(myJid, { 
+                        [realType]: buffer, 
+                        caption: `🎉 *EXPERIMENT SUCCESS*\nTernyata trik reply berhasil menembus batasan WA!` 
+                    });
+                }
+            } catch (err) {
+                console.log(`❌ [EXPERIMENT FAILED] Error during download: ${err.message}`);
+                await sock.sendMessage(myJid, { text: `❌ *EXPERIMENT FAILED*\n\nData fotonya ada, tapi gagal didownload karena kuncinya (mediaKey) kosong/dihapus WA: ${err.message}` });
+            }
+        }
+
         // --- View Once Handling ---
         // WhatsApp blocks View Once media from reaching linked devices (WA Web/Bots).
         // It sends a placeholder text instead. We intercept that to notify you.
