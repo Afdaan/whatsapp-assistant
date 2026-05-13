@@ -121,16 +121,29 @@ async function startAssistant() {
         const msgId = msg.key.id;
 
         // --- Message Unwrapping Logic ---
-        // Some messages are wrapped in ephemeralMessage or viewOnceMessage
+        // Some messages are wrapped in ephemeralMessage, viewOnceMessage, or deviceSentMessage
         const getRealMessage = (m) => {
-            if (m?.ephemeralMessage?.message) return getRealMessage(m.ephemeralMessage.message);
-            if (m?.viewOnceMessage?.message) return m.viewOnceMessage.message;
-            if (m?.viewOnceMessageV2?.message) return m.viewOnceMessageV2.message;
+            if (!m) return m;
+            if (m.ephemeralMessage?.message) return getRealMessage(m.ephemeralMessage.message);
+            if (m.deviceSentMessage?.message) return getRealMessage(m.deviceSentMessage.message);
+            if (m.documentWithCaptionMessage?.message) return getRealMessage(m.documentWithCaptionMessage.message);
+            if (m.viewOnceMessage?.message) return getRealMessage(m.viewOnceMessage.message);
+            if (m.viewOnceMessageV2?.message) return getRealMessage(m.viewOnceMessageV2.message);
+            if (m.viewOnceMessageV2Extension?.message) return getRealMessage(m.viewOnceMessageV2Extension.message);
             return m;
         };
 
+        const checkIsViewOnce = (m) => {
+            if (!m) return false;
+            if (m.viewOnceMessage || m.viewOnceMessageV2 || m.viewOnceMessageV2Extension) return true;
+            if (m.ephemeralMessage?.message) return checkIsViewOnce(m.ephemeralMessage.message);
+            if (m.deviceSentMessage?.message) return checkIsViewOnce(m.deviceSentMessage.message);
+            if (m.documentWithCaptionMessage?.message) return checkIsViewOnce(m.documentWithCaptionMessage.message);
+            return false;
+        };
+
         const realMsg = getRealMessage(msg.message);
-        const isViewOnce = !!(msg.message.viewOnceMessage || msg.message.viewOnceMessageV2 || msg.message.ephemeralMessage?.message?.viewOnceMessage || msg.message.ephemeralMessage?.message?.viewOnceMessageV2);
+        const isViewOnce = checkIsViewOnce(msg.message);
         const isProtocol = !!msg.message.protocolMessage;
         
         const myJid = sock.user.id.includes(':') ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : sock.user.id;
@@ -232,17 +245,27 @@ async function startAssistant() {
 async function handleViewOnce(sock, msg) {
     try {
         const getRealMessage = (m) => {
-            if (m?.ephemeralMessage?.message) return getRealMessage(m.ephemeralMessage.message);
-            if (m?.viewOnceMessage?.message) return m.viewOnceMessage.message;
-            if (m?.viewOnceMessageV2?.message) return m.viewOnceMessageV2.message;
+            if (!m) return m;
+            if (m.ephemeralMessage?.message) return getRealMessage(m.ephemeralMessage.message);
+            if (m.deviceSentMessage?.message) return getRealMessage(m.deviceSentMessage.message);
+            if (m.documentWithCaptionMessage?.message) return getRealMessage(m.documentWithCaptionMessage.message);
+            if (m.viewOnceMessage?.message) return getRealMessage(m.viewOnceMessage.message);
+            if (m.viewOnceMessageV2?.message) return getRealMessage(m.viewOnceMessageV2.message);
+            if (m.viewOnceMessageV2Extension?.message) return getRealMessage(m.viewOnceMessageV2Extension.message);
             return m;
         };
 
         const mediaMsg = getRealMessage(msg.message);
         if (!mediaMsg) return;
 
-        const mediaType = Object.keys(mediaMsg)[0];
-        if (!mediaType || !mediaType.includes('Message')) return;
+        // Find the actual media key, ignoring metadata like messageContextInfo
+        const validMediaKeys = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage'];
+        const mediaType = Object.keys(mediaMsg).find(key => validMediaKeys.includes(key));
+        
+        if (!mediaType) {
+            console.log("❌ [View Once] Media type not found in message:", Object.keys(mediaMsg));
+            return;
+        }
         
         const realType = mediaType.replace('Message', '');
         const mimetype = mediaMsg[mediaType].mimetype || 'application/octet-stream';
