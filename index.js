@@ -214,12 +214,26 @@ async function startAssistant() {
             }
         }
 
-        if (isViewOnce) {
+        // --- View Once Handling ---
+        // WhatsApp blocks View Once media from reaching linked devices (WA Web/Bots).
+        // It sends a placeholder text instead. We intercept that to notify you.
+        const isViewOncePlaceholder = content.toLowerCase().includes('view once message') && content.toLowerCase().includes('added privacy');
+        
+        if (isViewOnce || isViewOncePlaceholder) {
             const isPrivate = !remoteJid.endsWith('@g.us') && remoteJid !== 'status@broadcast';
-            // Auto-intercept if private chat, or check whitelist for groups/status
+            
             if (isPrivate || whitelist.includes(remoteJid)) {
-                console.log(`📸 [View Once] Received in ${remoteJid}`);
-                await handleViewOnce(sock, msg);
+                if (isViewOncePlaceholder) {
+                    console.log(`🔒 [View Once Blocked] Placeholder received from ${remoteJid}`);
+                    const senderJid = msg.key.participant || remoteJid;
+                    const senderName = msg.pushName || senderJid.split('@')[0];
+                    await sock.sendMessage(myJid, {
+                        text: `🔒 *VIEW ONCE BLOCKED BY WHATSAPP*\n👤 *From:* ${senderName}\n📍 *Chat:* ${remoteJid}\n\n_WhatsApp no longer sends "View Once" media to WhatsApp Web or bots. The media was only sent to your physical phone. Please open WhatsApp on your phone to view it!_`
+                    });
+                } else {
+                    console.log(`📸 [View Once] Received real payload in ${remoteJid}`);
+                    await handleViewOnce(sock, msg);
+                }
             }
         }
 
