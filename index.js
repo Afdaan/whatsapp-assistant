@@ -198,7 +198,7 @@ async function startAssistant() {
         }
 
         // Handle Delete messages (Anti-Delete)
-        if (messageType === 'protocolMessage' && msg.message.protocolMessage.type === 0) { // REVOKE
+        if (isProtocol && msg.message.protocolMessage.type === 0) { // REVOKE
             const protocolMsg = msg.message.protocolMessage;
             const revokedId = protocolMsg.key.id;
             const revokedRemoteJid = protocolMsg.key.remoteJid;
