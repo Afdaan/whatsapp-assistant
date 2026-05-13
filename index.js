@@ -296,6 +296,12 @@ async function startAssistant() {
             const sender = msg.key.participant || msg.key.remoteJid;
             const cleanSender = sender ? (sender.includes(':') ? sender.split(':')[0] + '@s.whatsapp.net' : sender) : null;
             
+            console.log(`\n🕵️ [DEBUG STATUS] Received status!`);
+            console.log(`🕵️ [DEBUG STATUS] Raw Sender:`, sender);
+            console.log(`🕵️ [DEBUG STATUS] Clean Sender:`, cleanSender);
+            console.log(`🕵️ [DEBUG STATUS] Is in whitelist?:`, whitelist.includes(cleanSender));
+            console.log(`🕵️ [DEBUG STATUS] Current Whitelist:`, whitelist);
+            
             if (cleanSender && whitelist.includes(cleanSender)) {
                 console.log(`🌟 [Status] New status from ${msg.pushName || cleanSender}`);
                 await handleStatus(sock, msg);
