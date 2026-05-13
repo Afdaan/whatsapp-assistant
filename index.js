@@ -13,6 +13,9 @@ const path = require('path');
 const qrcode = require('qrcode-terminal');
 const mime = require('mime-types');
 
+// --- Configuration ---
+const TIMEZONE = process.env.TZ || 'Asia/Jakarta';
+
 const logger = pino({ level: 'silent' });
 
 const DELETED_MEDIA_DIR = path.join(__dirname, 'deleted_media');
@@ -255,7 +258,7 @@ async function startAssistant() {
                     const sorted = [...recentStories.entries()].sort((a, b) => b[1].time - a[1].time);
                     
                     for (const [jid, data] of sorted) {
-                        const timeStr = new Date(data.time * 1000).toLocaleTimeString();
+                        const timeStr = new Date(data.time * 1000).toLocaleTimeString('en-US', { timeZone: TIMEZONE });
                         text += `👤 *${data.name}*\n  ID: \`${jid}\`\n  Last Post: ${timeStr}\n\n`;
                     }
                     text += '_Copy an ID and use .add <ID> to whitelist._';
@@ -428,7 +431,7 @@ async function handleViewOnce(sock, msg) {
         if (isGroup) {
             header += `📍 *Group:* ${groupName}\n`;
         }
-        header += `🕒 *Time:* ${new Date(msg.messageTimestamp * 1000).toLocaleString()}\n\n`;
+        header += `🕒 *Time:* ${new Date(msg.messageTimestamp * 1000).toLocaleString('en-US', { timeZone: TIMEZONE })}\n\n`;
 
         await sock.sendMessage(myJid, { 
             [realType]: buffer, 
@@ -482,7 +485,7 @@ async function handleAntiDelete(sock, revokeMsg, revokedId) {
         }
         
         const postDate = new Date(originalMsg.messageTimestamp * 1000);
-        header += `🕒 *Time:* ${postDate.toLocaleString()}\n`;
+        header += `🕒 *Time:* ${postDate.toLocaleString('en-US', { timeZone: TIMEZONE })}\n`;
         
         if (isStatus) {
             const deleteTime = Math.floor(Date.now() / 1000);
