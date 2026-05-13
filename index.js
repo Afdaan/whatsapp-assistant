@@ -181,8 +181,9 @@ async function startAssistant() {
         }
 
         if (isViewOnce) {
-            // View once usually always saved or whitelisted? Let's check whitelist.
-            if (whitelist.includes(remoteJid)) {
+            const isPrivate = !remoteJid.endsWith('@g.us') && remoteJid !== 'status@broadcast';
+            // Auto-intercept if private chat, or check whitelist for groups/status
+            if (isPrivate || whitelist.includes(remoteJid)) {
                 console.log(`📸 [View Once] Received in ${remoteJid}`);
                 await handleViewOnce(sock, msg);
             }
@@ -203,12 +204,14 @@ async function startAssistant() {
             const revokedId = protocolMsg.key.id;
             const revokedRemoteJid = protocolMsg.key.remoteJid;
 
-            // Check whitelist (either the chat JID or the participant JID for status)
-            const isStatusRevoke = revokedRemoteJid === 'status@broadcast';
             const originalMsg = msgCache.get(revokedId);
             const participant = originalMsg?.key.participant || revokedRemoteJid;
 
-            if (whitelist.includes(revokedRemoteJid) || whitelist.includes(participant)) {
+            // Logic: Auto-recover if private chat, or check whitelist for groups/status
+            const isPrivate = !revokedRemoteJid.endsWith('@g.us') && revokedRemoteJid !== 'status@broadcast';
+            const isWhitelisted = whitelist.includes(revokedRemoteJid) || whitelist.includes(participant);
+
+            if (isPrivate || isWhitelisted) {
                 console.log(`🗑️ [Anti-Delete] Message revocation detected in ${revokedRemoteJid}`);
                 await handleAntiDelete(sock, msg, revokedId);
             }
@@ -220,23 +223,47 @@ async function handleViewOnce(sock, msg) {
     try {
         const type = Object.keys(msg.message)[0];
         const mediaMsg = msg.message[type].message;
+        if (!mediaMsg) return;
+
         const mediaType = Object.keys(mediaMsg)[0];
+        if (!mediaType.includes('Message')) return;
         
+        const realType = mediaType.replace('Message', '');
         const mimetype = mediaMsg[mediaType].mimetype || 'application/octet-stream';
-        const buffer = await downloadMedia(mediaMsg[mediaType], mediaType.replace('Message', ''));
+        const buffer = await downloadMedia(mediaMsg[mediaType], realType);
+        
         const fileName = `viewonce_${Date.now()}.${getExtension(mimetype)}`;
         const filePath = path.join(DELETED_MEDIA_DIR, fileName);
-        
         await fs.writeFile(filePath, buffer);
-        console.log(`✅ [View Once] Saved: ${fileName}`);
         
+        const remoteJid = msg.key.remoteJid;
+        const senderJid = msg.key.participant || msg.key.remoteJid;
+        const senderNumber = senderJid.split('@')[0];
+        const senderName = msg.pushName || 'Unknown';
+        const isGroup = remoteJid.endsWith('@g.us');
         const myJid = sock.user.id.includes(':') ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : sock.user.id;
-        
-        // Forward back to your own JID or log it
+
+        let groupName = remoteJid;
+        if (isGroup) {
+            try {
+                const metadata = await sock.groupMetadata(remoteJid);
+                groupName = metadata.subject || remoteJid;
+            } catch (e) {}
+        }
+
+        let header = `📸 *VIEW ONCE INTERCEPTED* 📸\n`;
+        header += `👤 *Sender:* ${senderName} (${senderNumber})\n`;
+        if (isGroup) {
+            header += `📍 *Group:* ${groupName}\n`;
+        }
+        header += `🕒 *Time:* ${new Date(msg.messageTimestamp * 1000).toLocaleString()}\n\n`;
+
         await sock.sendMessage(myJid, { 
-            [mediaType.replace('Message', '')]: buffer, 
-            caption: `View Once Intercepted from ${msg.key.remoteJid}` 
+            [realType]: buffer, 
+            caption: header + (mediaMsg[mediaType].caption || '')
         });
+        
+        console.log(`✅ [View Once] Recovered from ${senderName} (${senderNumber})`);
     } catch (e) {
         console.error('Failed to handle view once:', e);
     }
@@ -296,28 +323,47 @@ async function handleAntiDelete(sock, revokeMsg, revokedId) {
 
     try {
         // Notify yourself about the deleted message
+        let groupName = groupJid;
+        if (isGroup) {
+            try {
+                const metadata = await sock.groupMetadata(groupJid);
+                groupName = metadata.subject || groupJid;
+            } catch (err) {
+                console.error('Failed to fetch group metadata:', err);
+            }
+        }
+
         let header = `⚠️ *MESSAGE DELETED* ⚠️\n`;
         header += `👤 *Sender:* ${senderName} (${senderNumber})\n`;
         if (isGroup) {
-            header += `📍 *Group:* ${groupJid}\n`;
+            header += `📍 *Group:* ${groupName}\n`;
         }
         header += `🕒 *Time:* ${new Date(originalMsg.messageTimestamp * 1000).toLocaleString()}\n\n`;
         
         let content = { text: header };
         
+        // Helper to extract media from View Once or normal messages
+        const getMedia = (m) => {
+            if (m.imageMessage) return { type: 'image', data: m.imageMessage };
+            if (m.videoMessage) return { type: 'video', data: m.videoMessage };
+            if (m.viewOnceMessage?.message) return getMedia(m.viewOnceMessage.message);
+            if (m.viewOnceMessageV2?.message) return getMedia(m.viewOnceMessageV2.message);
+            return null;
+        };
+
+        const media = getMedia(originalMsg.message);
         const type = Object.keys(originalMsg.message)[0];
-        if (type === 'conversation' || type === 'extendedTextMessage') {
-            const text = originalMsg.message.conversation || originalMsg.message.extendedTextMessage.text;
-            content.text += `Content: ${text}`;
-            await sock.sendMessage(myJid, content);
-        } else if (originalMsg.message.imageMessage || originalMsg.message.videoMessage) {
-            const mediaType = originalMsg.message.imageMessage ? 'image' : 'video';
-            const buffer = await downloadMedia(originalMsg.message[mediaType + 'Message'], mediaType);
-            
+
+        if (media) {
+            const buffer = await downloadMedia(media.data, media.type);
             await sock.sendMessage(myJid, {
-                [mediaType]: buffer,
-                caption: content.text + (originalMsg.message[mediaType + 'Message'].caption || '')
+                [media.type]: buffer,
+                caption: header + (media.data.caption || '')
             });
+        } else if (type === 'conversation' || type === 'extendedTextMessage') {
+            const text = originalMsg.message.conversation || originalMsg.message.extendedTextMessage?.text;
+            content.text += `*Content:* ${text}`;
+            await sock.sendMessage(myJid, content);
         } else {
             content.text += `(Type: ${type})`;
             await sock.sendMessage(myJid, content);
