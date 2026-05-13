@@ -246,26 +246,14 @@ async function startAssistant() {
             }
         }
 
-        // --- Cache for View Once IDs ---
-        // Store IDs of view once messages so we know when the user replies to them
-        if (!global.viewOnceIds) global.viewOnceIds = new Set();
-
         const contextInfo = realMsg?.extendedTextMessage?.contextInfo || realMsg?.imageMessage?.contextInfo || realMsg?.videoMessage?.contextInfo;
         const stanzaId = contextInfo?.stanzaId;
         const quotedMessage = contextInfo?.quotedMessage;
 
-        // --- View Once Handling & Auto-Scrape ---
+        // --- View Once Handling ---
         const isViewOncePlaceholder = content.toLowerCase().includes('view once message') && content.toLowerCase().includes('added privacy');
         
-        // 1. If we receive a View Once message or Placeholder, remember its ID
         if (isViewOnce || isViewOncePlaceholder) {
-            global.viewOnceIds.add(msgId);
-            // Keep set size manageable
-            if (global.viewOnceIds.size > 500) {
-                const firstItem = global.viewOnceIds.values().next().value;
-                global.viewOnceIds.delete(firstItem);
-            }
-
             const isPrivate = !remoteJid.endsWith('@g.us') && remoteJid !== 'status@broadcast';
             if (isPrivate || whitelist.includes(remoteJid)) {
                 if (isViewOncePlaceholder) {
@@ -273,7 +261,7 @@ async function startAssistant() {
                     const senderJid = msg.key.participant || remoteJid;
                     const senderName = msg.pushName || senderJid.split('@')[0];
                     await sock.sendMessage(myJid, {
-                        text: `🔒 *VIEW ONCE MASUK*\n👤 *Dari:* ${senderName}\n\n_WA menyembunyikan fotonya dari bot. Tapi jika kamu mereply foto tersebut di HP-mu dengan huruf apa saja, bot akan otomatis menyedot dan mengirimkannya ke sini!_`
+                        text: `🔒 *VIEW ONCE MASUK*\n👤 *Dari:* ${senderName}\n\n_Buka HP-mu, lalu balas (reply) foto ini dengan tulisan apa saja (contoh: "a"). Bot akan mencoba menyedot fotonya otomatis!_`
                     });
                 } else {
                     console.log(`📸 [View Once] Received real payload in ${remoteJid}`);
@@ -282,20 +270,21 @@ async function startAssistant() {
             }
         }
 
-        // 2. Automatic Scraper: If user replies to a known View Once message
-        if (isFromMe && quotedMessage && stanzaId && global.viewOnceIds.has(stanzaId)) {
-            console.log(`\n🎉 [AUTO-SCRAP] User replied to a known View Once message. Extracting...`);
+        // --- Auto-Scrape via Reply (No Command Needed) ---
+        // If user replies to a message, check if the quoted message itself is marked as viewOnce
+        if (isFromMe && quotedMessage && content.toLowerCase() !== '.scrap') {
             const quotedRealMsg = getRealMessage(quotedMessage);
-            const validMediaKeys = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage'];
-            const mediaType = Object.keys(quotedRealMsg || {}).find(key => validMediaKeys.includes(key));
+            const mediaMsg = quotedRealMsg?.imageMessage || quotedRealMsg?.videoMessage;
             
-            if (mediaType) {
+            // If WA preserves the viewOnce flag in the quoted payload, we can safely auto-scrape
+            if (mediaMsg && mediaMsg.viewOnce === true) {
+                console.log(`\n🎉 [AUTO-SCRAP] Detected viewOnce flag in quoted message! Extracting...`);
                 try {
-                    const realType = mediaType.replace('Message', '');
-                    const buffer = await downloadMedia(quotedRealMsg[mediaType], realType);
+                    const realType = quotedRealMsg.imageMessage ? 'image' : 'video';
+                    const buffer = await downloadMedia(mediaMsg, realType);
                     await sock.sendMessage(myJid, { 
                         [realType]: buffer, 
-                        caption: `🎉 *VIEW ONCE AUTO-SCRAP SUCCESS*\nBerhasil mem-bypass batasan WA!` 
+                        caption: `🎉 *VIEW ONCE AUTO-SCRAP SUCCESS*\nBerhasil mem-bypass batasan WA tanpa command!` 
                     });
                 } catch (err) {
                     console.log(`❌ [AUTO-SCRAP FAILED] Error: ${err.message}`);
