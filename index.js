@@ -54,6 +54,11 @@ function saveMsgCache() {
 // Auto-save cache every 10 seconds
 setInterval(saveMsgCache, 10000);
 
+// Heartbeat Monitor (Status log every 60 seconds)
+setInterval(() => {
+    console.log(`💓 [Heartbeat] Assistant is active. Cache size: ${msgCache.size}/${MAX_CACHE_SIZE} messages.`);
+}, 60000);
+
 async function startAssistant() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
     const { version, isLatest } = await fetchLatestBaileysVersion();
@@ -115,21 +120,24 @@ async function startAssistant() {
         const remoteJid = msg.key.remoteJid;
         const msgId = msg.key.id;
 
-        // Cache message for anti-delete
-        msgCache.set(msgId, JSON.parse(JSON.stringify(msg)));
-        
-        // Maintain cache limit
-        if (msgCache.size > MAX_CACHE_SIZE) {
-            const firstKey = msgCache.keys().next().value;
-            msgCache.delete(firstKey);
-        }
-
         // Handle View Once messages
         const messageType = Object.keys(msg.message)[0];
         const isViewOnce = messageType === 'viewOnceMessage' || messageType === 'viewOnceMessageV2';
+        const isProtocol = messageType === 'protocolMessage';
+        
         const myJid = sock.user.id.includes(':') ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : sock.user.id;
         const isFromMe = msg.key.fromMe;
         const content = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+
+        // Only cache actual content, not protocol messages
+        if (!isProtocol) {
+            msgCache.set(msgId, JSON.parse(JSON.stringify(msg)));
+            // Maintain cache limit
+            if (msgCache.size > MAX_CACHE_SIZE) {
+                const firstKey = msgCache.keys().next().value;
+                msgCache.delete(firstKey);
+            }
+        }
 
         // --- Whitelist Management Commands (Only from Me) ---
         if (isFromMe && content.startsWith('.')) {
@@ -157,7 +165,7 @@ async function startAssistant() {
                 whitelist = whitelist.filter(id => id !== target);
                 saveWhitelist();
                 await sock.sendMessage(myJid, { text: `❌ Removed *${target}* from whitelist.` });
-            } else if (cmd === 'list') {
+            } else if (cmd === 'list' || cmd === 'whitelist') {
                 const listText = whitelist.length > 0 ? whitelist.map(id => `- ${id}`).join('\n') : 'Whitelist is empty.';
                 await sock.sendMessage(myJid, { text: `📋 *Whitelist:*\n${listText}\n\n_Note: Use .add <JID> or .add <number>_` });
             } else if (cmd === 'groups') {
