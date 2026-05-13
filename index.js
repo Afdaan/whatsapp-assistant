@@ -143,6 +143,17 @@ async function startAssistant() {
         };
 
         const realMsg = getRealMessage(msg.message);
+        
+        // --- DEBUG LOG ---
+        const contentStr = realMsg?.conversation || realMsg?.extendedTextMessage?.text || '';
+        if (contentStr.includes('view once') || msg.message.viewOnceMessage || msg.message.viewOnceMessageV2) {
+            console.log(`\n🔍 [DEBUG] SUSPECTED VIEW ONCE FROM ${msg.key.remoteJid}`);
+            console.log(`🔍 [DEBUG] Raw keys:`, Object.keys(msg.message));
+            if (msg.message.extendedTextMessage) {
+                console.log(`🔍 [DEBUG] extendedTextMessage text:`, msg.message.extendedTextMessage.text);
+            }
+        }
+
         const isViewOnce = checkIsViewOnce(msg.message);
         const isProtocol = !!msg.message.protocolMessage;
         
