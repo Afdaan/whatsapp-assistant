@@ -32,7 +32,7 @@ jobs:
           
           echo "::group::Updating Service"
           # Deploying with the new tag. --remove-orphans ensures a clean state.
-          TAG=$TAG docker-compose up -d --remove-orphans
+          TAG=$TAG docker compose up -d --remove-orphans
           echo "::endgroup::"
           
       - name: Cleanup old images
