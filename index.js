@@ -235,6 +235,32 @@ async function startAssistant() {
                     groupsList += `• *${groups[id].subject}*\n  ID: \`${id}\`\n\n`;
                 }
                 await sock.sendMessage(myJid, { text: groupsList + '_Copy an ID and use .add <ID> to whitelist without typing in the group._' });
+            } else if (cmd === 'stories') {
+                const recentStories = new Map();
+                
+                for (const [id, m] of msgCache.entries()) {
+                    if (m.key.remoteJid === 'status@broadcast') {
+                        const sender = m.key.participant || m.key.remoteJid;
+                        const cleanSender = sender.includes(':') ? sender.split(':')[0] + '@' + sender.split('@')[1] : sender;
+                        const name = m.pushName || 'Unknown';
+                        
+                        recentStories.set(cleanSender, { name, time: m.messageTimestamp });
+                    }
+                }
+                
+                if (recentStories.size === 0) {
+                    await sock.sendMessage(myJid, { text: '📭 Belum ada story yang terekam di memori (sejak bot menyala).' });
+                } else {
+                    let text = '📸 *Recent Stories (Tracked in RAM):*\n\n';
+                    const sorted = [...recentStories.entries()].sort((a, b) => b[1].time - a[1].time);
+                    
+                    for (const [jid, data] of sorted) {
+                        const timeStr = new Date(data.time * 1000).toLocaleTimeString();
+                        text += `👤 *${data.name}*\n  ID: \`${jid}\`\n  Last Post: ${timeStr}\n\n`;
+                    }
+                    text += '_Copy an ID and use .add <ID> to whitelist._';
+                    await sock.sendMessage(myJid, { text });
+                }
             } else if (cmd === 'ping') {
                 await sock.sendMessage(myJid, { text: '🏓 Pong! Assistant is active.' });
             } else if (cmd === 'scrap') {

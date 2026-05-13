@@ -40,6 +40,7 @@ Use these commands directly in any WhatsApp chat. **Only you (the account owner)
 | `.add` | Adds the current chat to the whitelist. You can also **reply to a Status/Message** with `.add` to whitelist the sender instantly. |
 | `.add 6281xx` | Adds a specific number to the whitelist (always use the country code). |
 | `.add xxxx@lid` | Manually adds a Linked Device ID to the whitelist. |
+| `.stories` | Lists all contacts who recently posted a story, revealing their `@lid` or `@s.whatsapp.net` for easy whitelisting. |
 | `.del` | Removes the current chat from the whitelist. |
 | `.status on` | Turns ON the Global Status Monitor (monitors all contacts, bypassing LID restrictions). |
 | `.status off`| Turns OFF the Global Status Monitor (reverts to VIP Whitelist only). |
