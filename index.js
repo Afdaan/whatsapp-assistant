@@ -529,37 +529,43 @@ async function handleAntiDelete(sock, revokeMsg, revokedId) {
         const type = getContentType(originalMsg.message) || Object.keys(originalMsg.message)[0];
 
         if (media) {
-            const buffer = await downloadMedia(media.data, media.type);
-            
-            // Save to disk
-            const prefix = isStatus ? (isExpired ? 'expired' : 'deleted_story') : 'deleted_msg';
-            const fileName = `${prefix}_${Date.now()}.${getExtension(media.data.mimetype || 'application/octet-stream')}`;
-            const filePath = path.join(DELETED_MEDIA_DIR, fileName);
-            await fs.writeFile(filePath, buffer);
-
-            const hasCaption = ['image', 'video', 'document'].includes(media.type);
-
-            if (hasCaption) {
-                await sock.sendMessage(myJid, {
-                    [media.type]: buffer,
-                    caption: header + (media.data.caption || ''),
-                    mimetype: media.data.mimetype,
-                    fileName: media.data.fileName
-                });
-            } else {
-                // Send header as text first for media types that don't support caption (e.g. sticker, audio)
-                const sentMsg = await sock.sendMessage(myJid, { text: header });
+            try {
+                const buffer = await downloadMedia(media.data, media.type);
                 
-                const mediaPayload = {
-                    [media.type]: buffer,
-                    mimetype: media.data.mimetype
-                };
-                
-                if (media.type === 'audio' && media.data.ptt) {
-                    mediaPayload.ptt = true;
+                // Save to disk
+                const prefix = isStatus ? (isExpired ? 'expired' : 'deleted_story') : 'deleted_msg';
+                const fileName = `${prefix}_${Date.now()}.${getExtension(media.data.mimetype || 'application/octet-stream')}`;
+                const filePath = path.join(DELETED_MEDIA_DIR, fileName);
+                await fs.writeFile(filePath, buffer);
+
+                const hasCaption = ['image', 'video', 'document'].includes(media.type);
+
+                if (hasCaption) {
+                    await sock.sendMessage(myJid, {
+                        [media.type]: buffer,
+                        caption: header + (media.data.caption || ''),
+                        mimetype: media.data.mimetype,
+                        fileName: media.data.fileName
+                    });
+                } else {
+                    // Send header as text first for media types that don't support caption (e.g. sticker, audio)
+                    const sentMsg = await sock.sendMessage(myJid, { text: header });
+                    
+                    const mediaPayload = {
+                        [media.type]: buffer,
+                        mimetype: media.data.mimetype
+                    };
+                    
+                    if (media.type === 'audio' && media.data.ptt) {
+                        mediaPayload.ptt = true;
+                    }
+
+                    await sock.sendMessage(myJid, mediaPayload, { quoted: sentMsg });
                 }
-
-                await sock.sendMessage(myJid, mediaPayload, { quoted: sentMsg });
+            } catch (err) {
+                console.error(`[Anti-Delete] Failed to download media for message ${revokedId}:`, err.message);
+                content.text += `\n❌ *(Media gagal didownload: file mungkin sudah dihapus permanen dari server WA atau terjadi error koneksi)*`;
+                await sock.sendMessage(myJid, content);
             }
         } else if (type === 'conversation' || type === 'extendedTextMessage') {
             const text = originalMsg.message.conversation || originalMsg.message.extendedTextMessage?.text;
