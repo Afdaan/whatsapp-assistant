@@ -439,6 +439,9 @@ async function handleViewOnce(sock, msg) {
             caption: header + (mediaMsg[mediaType].caption || '')
         });
         
+        // Delete the file from local storage after forwarding
+        fs.unlink(filePath).catch(err => console.error('Failed to delete temp viewonce file:', err));
+
         console.log(`✅ [View Once] Recovered from ${senderName} (${senderNumber})`);
     } catch (e) {
         console.error('Failed to handle view once:', e);
@@ -562,6 +565,10 @@ async function handleAntiDelete(sock, revokeMsg, revokedId) {
 
                     await sock.sendMessage(myJid, mediaPayload, { quoted: sentMsg });
                 }
+                
+                // Delete the file from local storage after forwarding
+                fs.unlink(filePath).catch(err => console.error('Failed to delete temp media file:', err));
+                
             } catch (err) {
                 console.error(`[Anti-Delete] Failed to download media for message ${revokedId}:`, err.message);
                 content.text += `\n❌ *(Media gagal didownload: file mungkin sudah dihapus permanen dari server WA atau terjadi error koneksi)*`;
