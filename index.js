@@ -476,7 +476,12 @@ async function handleAntiDelete(sock, revokeMsg, revokedId) {
         }
 
         const isStatus = originalMsg.key.remoteJid === 'status@broadcast';
-        let header = isStatus ? `🌟 *STORY DELETED* 🌟\n` : `⚠️ *MESSAGE DELETED* ⚠️\n`;
+        
+        const deleteTime = Math.floor(Date.now() / 1000);
+        const diffSeconds = Math.max(0, deleteTime - originalMsg.messageTimestamp);
+        const isExpired = isStatus && diffSeconds >= 86300; // ~24 hours
+
+        let header = isStatus ? (isExpired ? `⌛ *STORY EXPIRED* ⌛\n` : `🌟 *STORY DELETED* 🌟\n`) : `⚠️ *MESSAGE DELETED* ⚠️\n`;
         
         header += `👤 *Sender:* ${senderName} ${!senderNumber.includes('@') ? `(${senderNumber})` : ''}\n`;
         
@@ -488,8 +493,6 @@ async function handleAntiDelete(sock, revokeMsg, revokedId) {
         header += `🕒 *Time:* ${postDate.toLocaleString('en-US', { timeZone: TIMEZONE })}\n`;
         
         if (isStatus) {
-            const deleteTime = Math.floor(Date.now() / 1000);
-            const diffSeconds = Math.max(0, deleteTime - originalMsg.messageTimestamp);
             const diffMins = Math.floor(diffSeconds / 60);
             const diffHrs = Math.floor(diffMins / 60);
             
@@ -520,6 +523,13 @@ async function handleAntiDelete(sock, revokeMsg, revokedId) {
 
         if (media) {
             const buffer = await downloadMedia(media.data, media.type);
+            
+            // Save to disk
+            const prefix = isStatus ? (isExpired ? 'expired' : 'deleted_story') : 'deleted_msg';
+            const fileName = `${prefix}_${Date.now()}.${getExtension(media.data.mimetype || 'application/octet-stream')}`;
+            const filePath = path.join(DELETED_MEDIA_DIR, fileName);
+            await fs.writeFile(filePath, buffer);
+
             await sock.sendMessage(myJid, {
                 [media.type]: buffer,
                 caption: header + (media.data.caption || '')
