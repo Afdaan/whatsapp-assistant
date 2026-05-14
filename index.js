@@ -4,7 +4,8 @@ const {
     DisconnectReason,
     fetchLatestBaileysVersion,
     jidDecode,
-    downloadContentFromMessage
+    downloadContentFromMessage,
+    getContentType
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const { Boom } = require('@hapi/boom');
@@ -511,15 +512,21 @@ async function handleAntiDelete(sock, revokeMsg, revokedId) {
         
         // Helper to extract media from View Once or normal messages
         const getMedia = (m) => {
+            if (!m) return null;
             if (m.imageMessage) return { type: 'image', data: m.imageMessage };
             if (m.videoMessage) return { type: 'video', data: m.videoMessage };
+            if (m.stickerMessage) return { type: 'sticker', data: m.stickerMessage };
+            if (m.audioMessage) return { type: 'audio', data: m.audioMessage };
+            if (m.documentMessage) return { type: 'document', data: m.documentMessage };
             if (m.viewOnceMessage?.message) return getMedia(m.viewOnceMessage.message);
             if (m.viewOnceMessageV2?.message) return getMedia(m.viewOnceMessageV2.message);
+            if (m.ephemeralMessage?.message) return getMedia(m.ephemeralMessage.message);
+            if (m.documentWithCaptionMessage?.message) return getMedia(m.documentWithCaptionMessage.message);
             return null;
         };
 
         const media = getMedia(originalMsg.message);
-        const type = Object.keys(originalMsg.message)[0];
+        const type = getContentType(originalMsg.message) || Object.keys(originalMsg.message)[0];
 
         if (media) {
             const buffer = await downloadMedia(media.data, media.type);
@@ -530,10 +537,30 @@ async function handleAntiDelete(sock, revokeMsg, revokedId) {
             const filePath = path.join(DELETED_MEDIA_DIR, fileName);
             await fs.writeFile(filePath, buffer);
 
-            await sock.sendMessage(myJid, {
-                [media.type]: buffer,
-                caption: header + (media.data.caption || '')
-            });
+            const hasCaption = ['image', 'video', 'document'].includes(media.type);
+
+            if (hasCaption) {
+                await sock.sendMessage(myJid, {
+                    [media.type]: buffer,
+                    caption: header + (media.data.caption || ''),
+                    mimetype: media.data.mimetype,
+                    fileName: media.data.fileName
+                });
+            } else {
+                // Send header as text first for media types that don't support caption (e.g. sticker, audio)
+                const sentMsg = await sock.sendMessage(myJid, { text: header });
+                
+                const mediaPayload = {
+                    [media.type]: buffer,
+                    mimetype: media.data.mimetype
+                };
+                
+                if (media.type === 'audio' && media.data.ptt) {
+                    mediaPayload.ptt = true;
+                }
+
+                await sock.sendMessage(myJid, mediaPayload, { quoted: sentMsg });
+            }
         } else if (type === 'conversation' || type === 'extendedTextMessage') {
             const text = originalMsg.message.conversation || originalMsg.message.extendedTextMessage?.text;
             content.text += `*Content:* ${text}`;
