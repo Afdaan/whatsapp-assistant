@@ -581,6 +581,13 @@ async function handleAntiDelete(sock, revokeMsg, revokedId) {
 }
 
 async function downloadMedia(message, type) {
+    // Sometimes WA sends media URLs with unresolvable domains like a.whatsapp.net
+    if (message && message.url && typeof message.url === 'string') {
+        if (message.url.includes('a.whatsapp.net')) {
+            message.url = message.url.replace('a.whatsapp.net', 'mmg.whatsapp.net');
+        }
+    }
+
     const stream = await downloadContentFromMessage(message, type);
     let buffer = Buffer.from([]);
     for await (const chunk of stream) {
