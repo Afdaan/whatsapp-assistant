@@ -351,7 +351,8 @@ async function startAssistant() {
             const cleanSender = sender ? (sender.includes(':') ? sender.split(':')[0] + '@' + sender.split('@')[1] : sender) : null;
             
             if (whitelist.includes('all_status') || (cleanSender && whitelist.includes(cleanSender))) {
-                console.log(`🌟 [Status] New status from ${msg.pushName || cleanSender} (Tracked in RAM)`);
+                console.log(`🌟 [Status] New status from ${msg.pushName || cleanSender}`);
+                await handleStatus(sock, msg);
             }
         }
 
@@ -445,6 +446,86 @@ async function handleViewOnce(sock, msg) {
         console.log(`✅ [View Once] Recovered from ${senderName} (${senderNumber})`);
     } catch (e) {
         console.error('Failed to handle view once:', e);
+    }
+}
+
+async function handleStatus(sock, msg) {
+    try {
+        const sender = msg.key.participant || msg.key.remoteJid;
+        const senderNumber = sender.split('@')[0];
+        const senderName = msg.pushName || 'Unknown';
+        const myJid = sock.user.id.includes(':') ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : sock.user.id;
+
+        // Unwrapping logic to get the actual message content
+        const getRealMessage = (m) => {
+            if (!m) return m;
+            if (m.ephemeralMessage?.message) return getRealMessage(m.ephemeralMessage.message);
+            if (m.deviceSentMessage?.message) return getRealMessage(m.deviceSentMessage.message);
+            if (m.documentWithCaptionMessage?.message) return getRealMessage(m.documentWithCaptionMessage.message);
+            if (m.viewOnceMessage?.message) return getRealMessage(m.viewOnceMessage.message);
+            if (m.viewOnceMessageV2?.message) return getRealMessage(m.viewOnceMessageV2.message);
+            return m;
+        };
+
+        const realMsg = getRealMessage(msg.message);
+
+        // Dynamic media detection
+        const getMedia = (m) => {
+            if (!m) return null;
+            const validKeys = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage', 'stickerMessage'];
+            const mediaKey = Object.keys(m).find(k => validKeys.includes(k));
+            if (mediaKey) {
+                return { type: mediaKey.replace('Message', ''), data: m[mediaKey] };
+            }
+            return null;
+        };
+
+        const media = getMedia(realMsg);
+        const type = getContentType(realMsg) || Object.keys(realMsg || {})[0];
+
+        let header = `🌟 *NEW STATUS RECEIVED* 🌟\n`;
+        header += `👤 *Sender:* ${senderName} (${senderNumber})\n`;
+        header += `🕒 *Time:* ${new Date(msg.messageTimestamp * 1000).toLocaleString('en-US', { timeZone: TIMEZONE })}\n\n`;
+
+        if (media) {
+            console.log(`📥 [Status] Downloading ${media.type} from ${senderName}...`);
+            const buffer = await downloadMedia(media.data, media.type);
+            
+            // Save temporary file (just in case)
+            const fileName = `status_${Date.now()}.${getExtension(media.data.mimetype || 'application/octet-stream')}`;
+            const filePath = path.join(DELETED_MEDIA_DIR, fileName);
+            await fs.writeFile(filePath, buffer);
+
+            const hasCaption = ['image', 'video', 'document'].includes(media.type);
+            const captionText = media.data.caption ? `📝 *Caption:* ${media.data.caption}` : '';
+            
+            const payload = {
+                [media.type]: buffer,
+                mimetype: media.data.mimetype,
+                fileName: media.data.fileName
+            };
+
+            if (hasCaption) {
+                payload.caption = header + captionText;
+                await sock.sendMessage(myJid, payload);
+            } else {
+                // For media without caption support (audio, sticker), send header first then media
+                const sent = await sock.sendMessage(myJid, { text: header + captionText });
+                await sock.sendMessage(myJid, payload, { quoted: sent });
+            }
+            
+            // Cleanup
+            fs.unlink(filePath).catch(err => console.error('Failed to delete temp status file:', err));
+        } else if (type === 'conversation' || type === 'extendedTextMessage') {
+            const text = realMsg.conversation || realMsg.extendedTextMessage?.text || '';
+            if (text) {
+                await sock.sendMessage(myJid, { text: header + `💬 *Content:* ${text}` });
+            }
+        }
+        
+        console.log(`✅ [Status] Forwarded status from ${senderName} (${senderNumber})`);
+    } catch (e) {
+        console.error('Failed to handle status update:', e);
     }
 }
 
