@@ -35,7 +35,7 @@ function saveWhitelist() {
 // Simple message cache to handle anti-delete
 const MSG_CACHE_PATH = path.join(__dirname, 'msg_cache.json');
 let msgCache = new Map();
-const MAX_CACHE_SIZE = 2000;
+const MAX_CACHE_SIZE = 10000;
 
 if (fs.existsSync(MSG_CACHE_PATH) && fs.lstatSync(MSG_CACHE_PATH).isFile()) {
     try {
