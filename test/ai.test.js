@@ -247,7 +247,7 @@ test('persists whitelist changes and enforces message cache size', () => {
     }
 });
 
-test('requires both sender and group whitelists for group AI access', () => {
+test('allows all members only inside whitelisted groups', () => {
     const aiWhitelist = { includes: value => value === '6281@s.whatsapp.net' };
     const groupWhitelist = { includes: value => value === 'allowed@g.us' };
 
@@ -282,6 +282,14 @@ test('requires both sender and group whitelists for group AI access', () => {
         isFromMe: false,
         remoteJid: 'allowed@g.us',
         senderJid: 'unauthorized@s.whatsapp.net'
+    }), true);
+    assert.equal(isAiAuthorized({
+        aiWhitelist,
+        allowGroups: true,
+        groupWhitelist,
+        isFromMe: false,
+        remoteJid: '6282@s.whatsapp.net',
+        senderJid: '6282@s.whatsapp.net'
     }), false);
     assert.equal(isAiAuthorized({
         aiWhitelist,

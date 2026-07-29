@@ -77,7 +77,7 @@ Management commands can only be triggered by the account owner. Whitelisted user
 | `.aidel <number/JID>` | Owner-only. Revoke AI access. |
 | `.ailist` | Owner-only. Show the AI whitelist. |
 
-AI access is intentionally separate from the status/anti-delete whitelist. The same AI whitelist protects chat and media commands. Group usage is disabled by default. When `AI_ALLOW_GROUPS=true`, both the sender and group must be explicitly whitelisted: use `.aiadd` for the sender, then run `.add` inside the group or `.add <group-JID>`. Unauthorized AI commands receive no reply. Each user can run only one AI request at a time, and downloaded/generated media is rejected above `AI_MEDIA_MAX_BYTES`.
+AI access is intentionally separate from the status/anti-delete whitelist. The AI whitelist protects private chat and media commands. Group usage is disabled by default. When `AI_ALLOW_GROUPS=true`, every member of an explicitly whitelisted group can use AI commands; run `.add` inside the group or `.add <group-JID>`. Other groups remain blocked. Unauthorized private-chat AI commands receive no reply. Each user can run only one AI request at a time, and downloaded/generated media is rejected above `AI_MEDIA_MAX_BYTES`.
 
 The system prompt lives in `prompts/system.txt`. It is read for every chat request, so edits apply without rebuilding or restarting the container. Keep this file free of secrets because its contents are sent to the configured model provider.
 
@@ -99,7 +99,7 @@ Required AI configuration:
 | `AI_MAX_TOKENS` | Maximum completion tokens; default `1000`. |
 | `AI_MAX_PROMPT_CHARS` | Maximum prompt length; default `4000`. |
 | `AI_MEDIA_MAX_BYTES` | Maximum input/output media size; default `20971520` bytes. |
-| `AI_ALLOW_GROUPS` | Enable AI only in explicitly whitelisted groups; sender must also be AI-whitelisted. Default `false`. |
+| `AI_ALLOW_GROUPS` | Allow every member to use AI inside explicitly whitelisted groups. Default `false`. |
 
 ## Architectural Details
 - **Zero-Storage Statuses**: Statuses are tracked entirely in RAM (`msgCache`). Media is only downloaded from Meta's CDN when a `REVOKE` (delete) event is detected. This prevents server disk bloat.

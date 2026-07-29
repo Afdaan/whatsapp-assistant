@@ -8,9 +8,10 @@ const { getAiCommand } = require('./commands');
 const activeRequests = new Set();
 
 function isAiAuthorized({ aiWhitelist, allowGroups, groupWhitelist, isFromMe, remoteJid, senderJid }) {
-    if (!isFromMe && !aiWhitelist.includes(senderJid)) return false;
-    if (!remoteJid.endsWith('@g.us')) return true;
-    return allowGroups && Boolean(groupWhitelist?.includes(remoteJid));
+    if (remoteJid.endsWith('@g.us')) {
+        return allowGroups && Boolean(groupWhitelist?.includes(remoteJid));
+    }
+    return isFromMe || Boolean(senderJid && aiWhitelist.includes(senderJid));
 }
 
 async function handleAiAccessCommand({ command, target, sock, myJid, whitelist }) {
@@ -65,12 +66,6 @@ async function handleAiMessage({
 
     const senderJid = normalizeUserJid(isFromMe ? myJid : (msg.key.participant || remoteJid));
     const isGroup = remoteJid.endsWith('@g.us');
-    const senderAuthorized = isFromMe || (senderJid && aiWhitelist.includes(senderJid));
-
-    if (!senderAuthorized) {
-        console.warn(`[AI] Denied request from ${senderJid || 'unknown'}`);
-        return true;
-    }
 
     if (!isAiAuthorized({
         aiWhitelist,
@@ -80,10 +75,13 @@ async function handleAiMessage({
         remoteJid,
         senderJid
     })) {
-        const text = AI_CONFIG.allowGroups
-            ? '⚠️ Group ini belum masuk whitelist owner.'
-            : '⚠️ AI hanya aktif di chat pribadi.';
-        await sock.sendMessage(remoteJid, { text }, { quoted: msg });
+        console.warn(`[AI] Denied request from ${senderJid || 'unknown'} in ${remoteJid}`);
+        if (isGroup && (isFromMe || (senderJid && aiWhitelist.includes(senderJid)))) {
+            const text = AI_CONFIG.allowGroups
+                ? '⚠️ Group ini belum masuk whitelist owner.'
+                : '⚠️ AI hanya aktif di chat pribadi.';
+            await sock.sendMessage(remoteJid, { text }, { quoted: msg });
+        }
         return true;
     }
 
