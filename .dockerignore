@@ -3,6 +3,9 @@ auth_info
 deleted_media
 msg_cache.json
 whitelist.json
+ai_whitelist.json
+.env
 .git
 .github
 *.log
+test

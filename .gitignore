@@ -9,6 +9,7 @@ baileys_store.json
 deleted_media/
 msg_cache.json
 whitelist.json
+ai_whitelist.json
 
 # Environment & Logs
 .env
