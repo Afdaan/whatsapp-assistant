@@ -22,6 +22,35 @@ function responseMimetype(response, fallback) {
     return (response.headers.get('content-type') || fallback).split(';')[0].trim();
 }
 
+function audioFormat(mimetype) {
+    if (mimetype === 'audio/mpeg') return 'mp3';
+    if (['audio/wav', 'audio/x-wav'].includes(mimetype)) return 'wav';
+    if (mimetype.includes('ogg')) return 'ogg';
+    if (mimetype.includes('webm')) return 'webm';
+    if (mimetype.includes('mp4') || mimetype.includes('m4a')) return 'm4a';
+    return getExtension(mimetype);
+}
+
+function attachmentBlock(attachment) {
+    const data = attachment.buffer.toString('base64');
+    if (attachment.kind === 'image') {
+        return { type: 'image_url', image_url: { url: `data:${attachment.mimetype};base64,${data}` } };
+    }
+    if (attachment.kind === 'audio') {
+        return { type: 'input_audio', input_audio: { data, format: audioFormat(attachment.mimetype) } };
+    }
+    if (attachment.kind === 'file') {
+        return {
+            type: 'file',
+            file: {
+                filename: attachment.filename,
+                file_data: `data:${attachment.mimetype};base64,${data}`
+            }
+        };
+    }
+    throw new Error('AI_MEDIA_UNSUPPORTED');
+}
+
 async function readBoundedBuffer(response, maxBytes) {
     const contentLength = Number(response.headers.get('content-length'));
     if (Number.isFinite(contentLength) && contentLength > maxBytes) {
@@ -39,7 +68,7 @@ async function readBoundedBuffer(response, maxBytes) {
     return Buffer.concat(chunks);
 }
 
-async function requestAi(prompt, config = AI_CONFIG, image = null, history = []) {
+async function requestAi(prompt, config = AI_CONFIG, attachments = [], history = []) {
     if (!config.baseUrl || !config.apiKey || !config.model) throw new Error('AI_NOT_CONFIGURED');
 
     const controller = new AbortController();
@@ -58,9 +87,9 @@ async function requestAi(prompt, config = AI_CONFIG, image = null, history = [])
                     )).map(message => ({ role: message.role, content: message.content })),
                     {
                         role: 'user',
-                        content: image ? [
+                        content: attachments.length ? [
                             { type: 'text', text: prompt },
-                            { type: 'image_url', image_url: { url: `data:${image.mimetype};base64,${image.buffer.toString('base64')}` } }
+                            ...attachments.map(attachmentBlock)
                         ] : prompt
                     }
                 ],

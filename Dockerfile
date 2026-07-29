@@ -1,7 +1,7 @@
 FROM node:20-alpine
 
 # Install dependencies for native modules (like libsignal or sharp)
-RUN apk add --no-cache libc6-compat
+RUN apk add --no-cache ffmpeg libc6-compat
 
 WORKDIR /app
 

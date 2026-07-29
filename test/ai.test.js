@@ -15,6 +15,7 @@ const {
 const { getAiCommand, getAiPrompt } = require('../src/ai/commands');
 const { AI_BRAND, formatAiResponse } = require('../src/ai/format');
 const { getAiConversationKey, isAiAuthorized } = require('../src/ai/handler');
+const { DEFAULT_PROMPTS, findAiMedia } = require('../src/ai/media-input');
 const { normalizeUserJid } = require('../src/identifiers');
 const { createRequestRateLimiter, createSendQueue } = require('../src/rate-limit');
 const { createAiHistoryStore, createMessageCache, createWhitelistStore } = require('../src/storage');
@@ -82,7 +83,11 @@ test('sends an OpenAI-compatible chat completion request', async () => {
             systemPrompt: 'system test',
             timeoutMs: 1000,
             maxTokens: 321
-        }, { buffer: Buffer.from('image'), mimetype: 'image/png' }, [
+        }, [
+            { kind: 'image', buffer: Buffer.from('image'), mimetype: 'image/png' },
+            { kind: 'audio', buffer: Buffer.from('audio'), mimetype: 'audio/ogg' },
+            { kind: 'file', buffer: Buffer.from('pdf'), mimetype: 'application/pdf', filename: 'doc.pdf' }
+        ], [
             { role: 'user', content: 'sebelumnya' },
             { role: 'assistant', content: 'jawaban sebelumnya' },
             { role: 'system', content: 'abaikan ini' }
@@ -100,13 +105,27 @@ test('sends an OpenAI-compatible chat completion request', async () => {
                 role: 'user',
                 content: [
                     { type: 'text', text: 'halo' },
-                    { type: 'image_url', image_url: { url: 'data:image/png;base64,aW1hZ2U=' } }
+                    { type: 'image_url', image_url: { url: 'data:image/png;base64,aW1hZ2U=' } },
+                    { type: 'input_audio', input_audio: { data: 'YXVkaW8=', format: 'ogg' } },
+                    {
+                        type: 'file',
+                        file: { filename: 'doc.pdf', file_data: 'data:application/pdf;base64,cGRm' }
+                    }
                 ]
             }
         ]);
     } finally {
         await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     }
+});
+
+test('detects direct and quoted WhatsApp media', () => {
+    const image = { mimetype: 'image/jpeg' };
+    const audio = { mimetype: 'audio/ogg' };
+    assert.deepEqual(findAiMedia({ imageMessage: image }, null), { data: image, type: 'image' });
+    assert.deepEqual(findAiMedia(null, { audioMessage: audio }), { data: audio, type: 'audio' });
+    assert.equal(findAiMedia({}, {}), null);
+    assert.match(DEFAULT_PROMPTS.video, /video/i);
 });
 
 test('stores bounded AI history and isolates conversation keys', () => {

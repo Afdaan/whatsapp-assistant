@@ -5,6 +5,7 @@ const { getRealMessage } = require('../whatsapp/message-utils');
 const { generateImage, generateSpeech, generateVideo, requestAi, transcribeAudio } = require('./client');
 const { getAiCommand } = require('./commands');
 const { AI_BRAND, formatAiResponse } = require('./format');
+const { findAiMedia, prepareAiMediaInput } = require('./media-input');
 
 const activeRequests = new Set();
 
@@ -68,11 +69,16 @@ async function handleAiMessage({
     upsertType,
     groupWhitelist
 }) {
-    const command = getAiCommand(content);
+    const quotedRealMsg = getRealMessage(contextInfo?.quotedMessage);
+    const inputMedia = findAiMedia(realMsg, quotedRealMsg);
+    const isGroup = remoteJid.endsWith('@g.us');
+    const autoMediaCommand = inputMedia && !isGroup && !isFromMe
+        ? { name: 'ai', prompt: '' }
+        : null;
+    const command = getAiCommand(content) || autoMediaCommand;
     if (!command || upsertType !== 'notify') return false;
 
     const senderJid = normalizeUserJid(isFromMe ? myJid : (msg.key.participant || remoteJid));
-    const isGroup = remoteJid.endsWith('@g.us');
     const conversationKey = getAiConversationKey(remoteJid, senderJid);
 
     if (!isAiAuthorized({
@@ -105,10 +111,8 @@ async function handleAiMessage({
         return true;
     }
 
-    const quotedRealMsg = getRealMessage(contextInfo?.quotedMessage);
-    const inputImage = realMsg?.imageMessage || quotedRealMsg?.imageMessage;
     const inputAudio = realMsg?.audioMessage || quotedRealMsg?.audioMessage;
-    const promptRequired = command.name !== 'transcribe' && !(command.name === 'ai' && inputImage);
+    const promptRequired = command.name !== 'transcribe' && !(command.name === 'ai' && inputMedia);
 
     if (command.name === 'ai' && /^(reset|clear)$/i.test(command.prompt)) {
         const cleared = aiHistory.clear(conversationKey);
@@ -143,15 +147,9 @@ async function handleAiMessage({
     activeRequests.add(senderJid);
     try {
         if (command.name === 'ai') {
-            let image = null;
-            if (inputImage) {
-                image = {
-                    buffer: await downloadMedia(inputImage, 'image', AI_CONFIG.mediaMaxBytes),
-                    mimetype: inputImage.mimetype || 'image/jpeg'
-                };
-            }
-            const userPrompt = command.prompt || 'Jelaskan gambar ini.';
-            const answer = await requestAi(userPrompt, AI_CONFIG, image, aiHistory.get(conversationKey));
+            const prepared = await prepareAiMediaInput(inputMedia, command.prompt, AI_CONFIG);
+            const userPrompt = prepared.prompt;
+            const answer = await requestAi(userPrompt, AI_CONFIG, prepared.attachments, aiHistory.get(conversationKey));
             await sendLongText(sock, remoteJid, formatAiResponse(answer), msg);
             aiHistory.append(conversationKey, userPrompt, answer);
         } else if (command.name === 'image') {
@@ -178,6 +176,8 @@ async function handleAiMessage({
         console.error(`[AI] ${command.name} failed for ${senderJid}: ${error.message}`);
         const message = error.message === 'AI_MEDIA_TOO_LARGE'
             ? `❌ Media melebihi batas ${Math.floor(AI_CONFIG.mediaMaxBytes / 1024 / 1024)} MB.`
+            : error.message === 'AI_VIDEO_ANALYSIS_UNAVAILABLE'
+                ? '❌ Video belum bisa dianalisis. Pastikan `ffmpeg` tersedia atau konfigurasi model STT.'
             : '❌ AI sedang gagal memproses request. Coba lagi nanti.';
         await sock.sendMessage(remoteJid, { text: message }, { quoted: msg });
     } finally {

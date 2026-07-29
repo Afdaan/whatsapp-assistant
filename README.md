@@ -68,7 +68,7 @@ Management commands can only be triggered by the account owner. Whitelisted user
 ### AI Assistant
 | Command | Description |
 |---------|-------------|
-| `!ai <prompt>` | Ask the configured chat model. Reply to an image, or use it as an image caption, for vision input. |
+| `!ai <prompt>` | Ask the chat model. Supports replied/captioned images, stickers, audio, video, and documents. |
 | `!ai reset` | Delete local AI memory for the current private chat or group identity. Alias: `!ai clear`. |
 | `!image <prompt>` | Generate and send an image. Alias: `!img`. |
 | `!voice <text>` | Generate and send speech audio. OGG/Opus responses are sent as voice notes. Alias: `!tts`. |
@@ -84,6 +84,8 @@ AI access is intentionally separate from the status/anti-delete whitelist. The A
 AI requests are rate-limited per user and globally. Repeated denied requests receive at most one warning per limit window. All outgoing WhatsApp messages also use a shared send queue to avoid bursts. These controls reduce spam risk but cannot guarantee that WhatsApp will never restrict the account.
 
 Successful `!ai` conversations are stored locally in `ai_history.json`. Private memory is isolated per chat; group memory is isolated per group and sender. Only text prompts and model replies are stored, never image data. The default context is the latest 8 messages (4 user/assistant turns).
+
+Whitelisted private users can send media directly without a command. Groups still require `!ai` in the media caption or as a reply to avoid processing every group upload. Images and stickers are sent as vision input. Audio is sent as audio input and transcribed when `AI_STT_MODEL` is configured. Video uses a representative frame plus optional audio transcription because 9Router has no OpenAI-compatible video block for chat. PDFs and other documents use file input; plain-text documents are embedded as bounded text.
 
 The system prompt lives in `prompts/system.txt`. It is read for every chat request, so edits apply without rebuilding or restarting the container. Keep this file free of secrets because its contents are sent to the configured model provider.
 
@@ -126,6 +128,7 @@ Required AI configuration:
 - `src/rate-limit.js`: AI request limits and global outbound message pacing.
 - `src/ai/client.js`: OpenAI-compatible chat, image, TTS, STT, and video API client.
 - `src/ai/handler.js`: AI authorization and WhatsApp command execution.
+- `src/ai/media-input.js`: WhatsApp media preparation for multimodal chat input.
 - `src/ai/commands.js`: AI command parsing and aliases.
 - `src/whatsapp/content-handlers.js`: View Once, status, and anti-delete handlers.
 - `src/whatsapp/owner-commands.js`: Owner-only management commands.
