@@ -4,6 +4,7 @@ const { downloadMedia, sendLongText } = require('../media');
 const { getRealMessage } = require('../whatsapp/message-utils');
 const { generateImage, generateSpeech, generateVideo, requestAi, transcribeAudio } = require('./client');
 const { getAiCommand } = require('./commands');
+const { formatAiResponse } = require('./format');
 
 const activeRequests = new Set();
 
@@ -122,7 +123,7 @@ async function handleAiMessage({
                 };
             }
             const answer = await requestAi(command.prompt || 'Jelaskan gambar ini.', AI_CONFIG, image);
-            await sendLongText(sock, remoteJid, answer, msg);
+            await sendLongText(sock, remoteJid, formatAiResponse(answer), msg);
         } else if (command.name === 'image') {
             const image = await generateImage(command.prompt);
             await sock.sendMessage(remoteJid, { image: image.buffer, mimetype: image.mimetype, caption: command.prompt.slice(0, 1000) }, { quoted: msg });
@@ -137,7 +138,7 @@ async function handleAiMessage({
             }
             const buffer = await downloadMedia(inputAudio, 'audio', AI_CONFIG.mediaMaxBytes);
             const transcript = await transcribeAudio(buffer, inputAudio.mimetype || 'audio/ogg');
-            await sendLongText(sock, remoteJid, transcript, msg);
+            await sendLongText(sock, remoteJid, formatAiResponse(transcript, 'Dnz AI · Transkripsi'), msg);
         } else if (command.name === 'video') {
             await sock.sendMessage(remoteJid, { text: '🎬 Video sedang dibuat. Proses bisa beberapa menit.' }, { quoted: msg });
             const video = await generateVideo(command.prompt);

@@ -13,6 +13,7 @@ const {
     transcribeAudio
 } = require('../src/ai/client');
 const { getAiCommand, getAiPrompt } = require('../src/ai/commands');
+const { formatAiResponse } = require('../src/ai/format');
 const { isAiAuthorized } = require('../src/ai/handler');
 const { normalizeUserJid } = require('../src/identifiers');
 const { createMessageCache, createWhitelistStore } = require('../src/storage');
@@ -33,6 +34,13 @@ test('parses only the exact !ai command', () => {
     assert.deepEqual(getAiCommand('!tts halo'), { name: 'voice', prompt: 'halo' });
     assert.deepEqual(getAiCommand('!stt'), { name: 'transcribe', prompt: '' });
     assert.deepEqual(getAiCommand('!video hujan'), { name: 'video', prompt: 'hujan' });
+});
+
+test('formats AI output for WhatsApp without changing code blocks', () => {
+    assert.equal(formatAiResponse(`## Jawaban\n\n**Penting**\n- satu\n- dua\n\n\n\`\`\`js\nconst value = '**raw**';\n\`\`\``),
+        `✨ *Dnz AI*\n\n*Jawaban*\n\n*Penting*\n• satu\n• dua\n\n\`\`\`js\nconst value = '**raw**';\n\`\`\``);
+    assert.equal(formatAiResponse('hasil suara', 'Dnz AI · Transkripsi'),
+        '✨ *Dnz AI · Transkripsi*\n\nhasil suara');
 });
 
 test('reloads the system prompt from text file', () => {
