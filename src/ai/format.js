@@ -1,4 +1,4 @@
-const AI_BRAND = 'Dnz AI';
+const AI_BRAND = 'Nigga Chain Ai Layer 2';
 
 function formatAiResponse(text, label = AI_BRAND) {
     const lines = String(text || '').replace(/\r\n?/g, '\n').trim().split('\n');
