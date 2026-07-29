@@ -21,12 +21,17 @@ const AI_CONFIG = {
     videoPollMs: parseIntegerEnv('AI_VIDEO_POLL_MS', 5000, 1000, 30000),
     maxTokens: parseIntegerEnv('AI_MAX_TOKENS', 1000, 1, 4000),
     maxPromptChars: parseIntegerEnv('AI_MAX_PROMPT_CHARS', 4000, 1, 12000),
+    historyMaxMessages: parseIntegerEnv('AI_HISTORY_MAX_MESSAGES', 8, 2, 40),
+    rateLimitWindowMs: parseIntegerEnv('AI_RATE_LIMIT_WINDOW_MS', 60000, 10000, 3600000),
+    rateLimitMaxRequests: parseIntegerEnv('AI_RATE_LIMIT_MAX_REQUESTS', 5, 1, 100),
+    rateLimitGlobalMaxRequests: parseIntegerEnv('AI_RATE_LIMIT_GLOBAL_MAX_REQUESTS', 20, 1, 1000),
     mediaMaxBytes: parseIntegerEnv('AI_MEDIA_MAX_BYTES', 20 * 1024 * 1024, 1024, 100 * 1024 * 1024),
     allowGroups: process.env.AI_ALLOW_GROUPS === 'true'
 };
 
 module.exports = {
     AI_CONFIG,
+    AI_HISTORY_PATH: path.join(ROOT_DIR, 'ai_history.json'),
     AI_WHITELIST_PATH: path.join(ROOT_DIR, 'ai_whitelist.json'),
     AUTH_DIR: path.join(ROOT_DIR, 'auth_info'),
     DELETED_MEDIA_DIR: path.join(ROOT_DIR, 'deleted_media'),
@@ -34,5 +39,6 @@ module.exports = {
     MSG_CACHE_PATH: path.join(ROOT_DIR, 'msg_cache.json'),
     ROOT_DIR,
     TIMEZONE: process.env.TZ || 'Asia/Jakarta',
+    WHATSAPP_SEND_INTERVAL_MS: parseIntegerEnv('WHATSAPP_SEND_INTERVAL_MS', 1500, 0, 10000),
     WHITELIST_PATH: path.join(ROOT_DIR, 'whitelist.json')
 };

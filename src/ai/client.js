@@ -39,7 +39,7 @@ async function readBoundedBuffer(response, maxBytes) {
     return Buffer.concat(chunks);
 }
 
-async function requestAi(prompt, config = AI_CONFIG, image = null) {
+async function requestAi(prompt, config = AI_CONFIG, image = null, history = []) {
     if (!config.baseUrl || !config.apiKey || !config.model) throw new Error('AI_NOT_CONFIGURED');
 
     const controller = new AbortController();
@@ -53,6 +53,9 @@ async function requestAi(prompt, config = AI_CONFIG, image = null) {
                 model: config.model,
                 messages: [
                     { role: 'system', content: readSystemPrompt(config) },
+                    ...history.filter(message => (
+                        ['user', 'assistant'].includes(message?.role) && typeof message.content === 'string'
+                    )).map(message => ({ role: message.role, content: message.content })),
                     {
                         role: 'user',
                         content: image ? [

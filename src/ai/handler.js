@@ -4,9 +4,13 @@ const { downloadMedia, sendLongText } = require('../media');
 const { getRealMessage } = require('../whatsapp/message-utils');
 const { generateImage, generateSpeech, generateVideo, requestAi, transcribeAudio } = require('./client');
 const { getAiCommand } = require('./commands');
-const { formatAiResponse } = require('./format');
+const { AI_BRAND, formatAiResponse } = require('./format');
 
 const activeRequests = new Set();
+
+function getAiConversationKey(remoteJid, senderJid) {
+    return remoteJid.endsWith('@g.us') ? `${remoteJid}:${senderJid}` : remoteJid;
+}
 
 function isAiAuthorized({ aiWhitelist, allowGroups, groupWhitelist, isFromMe, remoteJid, senderJid }) {
     if (remoteJid.endsWith('@g.us')) {
@@ -51,6 +55,8 @@ async function handleAiAccessCommand({ command, target, sock, myJid, whitelist }
 
 async function handleAiMessage({
     aiWhitelist,
+    aiHistory,
+    aiRateLimiter,
     content,
     contextInfo,
     isFromMe,
@@ -67,6 +73,7 @@ async function handleAiMessage({
 
     const senderJid = normalizeUserJid(isFromMe ? myJid : (msg.key.participant || remoteJid));
     const isGroup = remoteJid.endsWith('@g.us');
+    const conversationKey = getAiConversationKey(remoteJid, senderJid);
 
     if (!isAiAuthorized({
         aiWhitelist,
@@ -86,10 +93,31 @@ async function handleAiMessage({
         return true;
     }
 
+    const rateLimit = aiRateLimiter.check(senderJid || conversationKey);
+    if (!rateLimit.allowed) {
+        console.warn(`[AI] Rate limited ${senderJid || 'unknown'} (${rateLimit.scope})`);
+        if (rateLimit.notify) {
+            const seconds = Math.ceil(rateLimit.retryAfterMs / 1000);
+            await sock.sendMessage(remoteJid, {
+                text: `⏳ *${AI_BRAND}*\n\nTerlalu banyak request. Coba lagi dalam ${seconds} detik.`
+            }, { quoted: msg });
+        }
+        return true;
+    }
+
     const quotedRealMsg = getRealMessage(contextInfo?.quotedMessage);
     const inputImage = realMsg?.imageMessage || quotedRealMsg?.imageMessage;
     const inputAudio = realMsg?.audioMessage || quotedRealMsg?.audioMessage;
     const promptRequired = command.name !== 'transcribe' && !(command.name === 'ai' && inputImage);
+
+    if (command.name === 'ai' && /^(reset|clear)$/i.test(command.prompt)) {
+        const cleared = aiHistory.clear(conversationKey);
+        const text = cleared
+            ? `🧹 *${AI_BRAND}*\n\nMemori percakapan di chat ini sudah dihapus.`
+            : '❌ Memori gagal dihapus. Cek log server.';
+        await sock.sendMessage(remoteJid, { text }, { quoted: msg });
+        return true;
+    }
 
     if (promptRequired && !command.prompt) {
         await sock.sendMessage(remoteJid, { text: 'Gunakan `!ai`, `!image`, `!voice`, atau `!video` diikuti prompt. `!transcribe` harus me-reply voice note.' }, { quoted: msg });
@@ -122,8 +150,10 @@ async function handleAiMessage({
                     mimetype: inputImage.mimetype || 'image/jpeg'
                 };
             }
-            const answer = await requestAi(command.prompt || 'Jelaskan gambar ini.', AI_CONFIG, image);
+            const userPrompt = command.prompt || 'Jelaskan gambar ini.';
+            const answer = await requestAi(userPrompt, AI_CONFIG, image, aiHistory.get(conversationKey));
             await sendLongText(sock, remoteJid, formatAiResponse(answer), msg);
+            aiHistory.append(conversationKey, userPrompt, answer);
         } else if (command.name === 'image') {
             const image = await generateImage(command.prompt);
             await sock.sendMessage(remoteJid, { image: image.buffer, mimetype: image.mimetype, caption: command.prompt.slice(0, 1000) }, { quoted: msg });
@@ -138,7 +168,7 @@ async function handleAiMessage({
             }
             const buffer = await downloadMedia(inputAudio, 'audio', AI_CONFIG.mediaMaxBytes);
             const transcript = await transcribeAudio(buffer, inputAudio.mimetype || 'audio/ogg');
-            await sendLongText(sock, remoteJid, formatAiResponse(transcript, 'Dnz AI · Transkripsi'), msg);
+            await sendLongText(sock, remoteJid, formatAiResponse(transcript, `${AI_BRAND} · Transkripsi`), msg);
         } else if (command.name === 'video') {
             await sock.sendMessage(remoteJid, { text: '🎬 Video sedang dibuat. Proses bisa beberapa menit.' }, { quoted: msg });
             const video = await generateVideo(command.prompt);
@@ -157,4 +187,4 @@ async function handleAiMessage({
     return true;
 }
 
-module.exports = { handleAiAccessCommand, handleAiMessage, isAiAuthorized };
+module.exports = { getAiConversationKey, handleAiAccessCommand, handleAiMessage, isAiAuthorized };

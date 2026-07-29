@@ -11,15 +11,19 @@ const qrcode = require('qrcode-terminal');
 const { handleAiMessage } = require('./ai/handler');
 const {
     AI_WHITELIST_PATH,
+    AI_CONFIG,
+    AI_HISTORY_PATH,
     AUTH_DIR,
     DELETED_MEDIA_DIR,
     MAX_CACHE_SIZE,
     MSG_CACHE_PATH,
+    WHATSAPP_SEND_INTERVAL_MS,
     WHITELIST_PATH
 } = require('./config');
 const { normalizeUserJid } = require('./identifiers');
 const { downloadMedia } = require('./media');
-const { createMessageCache, createWhitelistStore } = require('./storage');
+const { createRequestRateLimiter, createSendQueue } = require('./rate-limit');
+const { createAiHistoryStore, createMessageCache, createWhitelistStore } = require('./storage');
 const { handleAntiDelete, handleStatus, handleViewOnce } = require('./whatsapp/content-handlers');
 const { checkIsViewOnce, getContextInfo, getMessageContent, getMyJid, getRealMessage } = require('./whatsapp/message-utils');
 const { handleOwnerCommand } = require('./whatsapp/owner-commands');
@@ -30,7 +34,14 @@ fs.ensureDirSync(DELETED_MEDIA_DIR);
 
 const whitelist = createWhitelistStore(WHITELIST_PATH);
 const aiWhitelist = createWhitelistStore(AI_WHITELIST_PATH, normalizeUserJid);
+const aiHistory = createAiHistoryStore(AI_HISTORY_PATH, AI_CONFIG.historyMaxMessages);
+const aiRateLimiter = createRequestRateLimiter({
+    windowMs: AI_CONFIG.rateLimitWindowMs,
+    maxPerKey: AI_CONFIG.rateLimitMaxRequests,
+    maxGlobal: AI_CONFIG.rateLimitGlobalMaxRequests
+});
 const msgCache = createMessageCache(MSG_CACHE_PATH, MAX_CACHE_SIZE);
+const sendQueue = createSendQueue(WHATSAPP_SEND_INTERVAL_MS);
 
 setInterval(() => msgCache.save(), 10000).unref();
 setInterval(() => {
@@ -69,6 +80,8 @@ async function startAssistant() {
             return message;
         }
     });
+    const sendMessage = sock.sendMessage.bind(sock);
+    sock.sendMessage = (...args) => sendQueue.send(() => sendMessage(...args));
 
 
 
@@ -129,6 +142,8 @@ async function startAssistant() {
         })) return;
 
         if (await handleAiMessage({
+            aiHistory,
+            aiRateLimiter,
             aiWhitelist,
             content,
             contextInfo,

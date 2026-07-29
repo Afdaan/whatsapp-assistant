@@ -26,8 +26,9 @@ Using Docker is recommended because it keeps all dependencies isolated and manag
    cp whitelist.example.json whitelist.json
    cp ai_whitelist.example.json ai_whitelist.json
    printf '{}\n' > msg_cache.json
+   printf '{}\n' > ai_history.json
    mkdir -p auth_info deleted_media
-   chmod 600 .env whitelist.json ai_whitelist.json msg_cache.json
+   chmod 600 .env whitelist.json ai_whitelist.json ai_history.json msg_cache.json
    ```
    Set `AI_API_KEY` and `AI_MODEL` in `.env`. The default Docker base URL expects 9Router on host port `20128`.
 2. **Start the container**:
@@ -68,6 +69,7 @@ Management commands can only be triggered by the account owner. Whitelisted user
 | Command | Description |
 |---------|-------------|
 | `!ai <prompt>` | Ask the configured chat model. Reply to an image, or use it as an image caption, for vision input. |
+| `!ai reset` | Delete local AI memory for the current private chat or group identity. Alias: `!ai clear`. |
 | `!image <prompt>` | Generate and send an image. Alias: `!img`. |
 | `!voice <text>` | Generate and send speech audio. OGG/Opus responses are sent as voice notes. Alias: `!tts`. |
 | `!transcribe` | Reply to a voice note/audio to transcribe it. Alias: `!stt`. |
@@ -78,6 +80,10 @@ Management commands can only be triggered by the account owner. Whitelisted user
 | `.ailist` | Owner-only. Show the AI whitelist. |
 
 AI access is intentionally separate from the status/anti-delete whitelist. The AI whitelist protects private chat and media commands. Group usage is disabled by default. When `AI_ALLOW_GROUPS=true`, every member of an explicitly whitelisted group can use AI commands; run `.add` inside the group or `.add <group-JID>`. Other groups remain blocked. Unauthorized private-chat AI commands receive no reply. Each user can run only one AI request at a time, and downloaded/generated media is rejected above `AI_MEDIA_MAX_BYTES`.
+
+AI requests are rate-limited per user and globally. Repeated denied requests receive at most one warning per limit window. All outgoing WhatsApp messages also use a shared send queue to avoid bursts. These controls reduce spam risk but cannot guarantee that WhatsApp will never restrict the account.
+
+Successful `!ai` conversations are stored locally in `ai_history.json`. Private memory is isolated per chat; group memory is isolated per group and sender. Only text prompts and model replies are stored, never image data. The default context is the latest 8 messages (4 user/assistant turns).
 
 The system prompt lives in `prompts/system.txt`. It is read for every chat request, so edits apply without rebuilding or restarting the container. Keep this file free of secrets because its contents are sent to the configured model provider.
 
@@ -98,8 +104,13 @@ Required AI configuration:
 | `AI_VIDEO_POLL_MS` | Video polling interval; default `5000`. |
 | `AI_MAX_TOKENS` | Maximum completion tokens; default `1000`. |
 | `AI_MAX_PROMPT_CHARS` | Maximum prompt length; default `4000`. |
+| `AI_HISTORY_MAX_MESSAGES` | Local context entries per chat identity; default `8` (4 turns), maximum `40`. |
+| `AI_RATE_LIMIT_WINDOW_MS` | AI request limit window; default `60000` (1 minute). |
+| `AI_RATE_LIMIT_MAX_REQUESTS` | Accepted AI commands per user/window; default `5`. |
+| `AI_RATE_LIMIT_GLOBAL_MAX_REQUESTS` | Accepted AI commands across all users/window; default `20`. |
 | `AI_MEDIA_MAX_BYTES` | Maximum input/output media size; default `20971520` bytes. |
 | `AI_ALLOW_GROUPS` | Allow every member to use AI inside explicitly whitelisted groups. Default `false`. |
+| `WHATSAPP_SEND_INTERVAL_MS` | Minimum interval between all outbound WhatsApp messages; default `1500`. |
 
 ## Architectural Details
 - **Zero-Storage Statuses**: Statuses are tracked entirely in RAM (`msgCache`). Media is only downloaded from Meta's CDN when a `REVOKE` (delete) event is detected. This prevents server disk bloat.
@@ -112,6 +123,7 @@ Required AI configuration:
 - `src/config.js`: Runtime paths and environment configuration.
 - `src/storage.js`: Whitelist and message-cache persistence.
 - `src/media.js`: Bounded WhatsApp media download and text sending helpers.
+- `src/rate-limit.js`: AI request limits and global outbound message pacing.
 - `src/ai/client.js`: OpenAI-compatible chat, image, TTS, STT, and video API client.
 - `src/ai/handler.js`: AI authorization and WhatsApp command execution.
 - `src/ai/commands.js`: AI command parsing and aliases.
@@ -123,3 +135,4 @@ Required AI configuration:
 - `prompts/system.txt`: Live-reloaded AI system prompt.
 - `whitelist.json`: List of monitored VIP chats (Docker mounted).
 - `ai_whitelist.json`: Separate list of users allowed to invoke the AI assistant (Docker mounted).
+- `ai_history.json`: Local bounded AI conversation memory (Docker mounted, gitignored).

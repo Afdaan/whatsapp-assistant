@@ -4,6 +4,7 @@ deleted_media
 msg_cache.json
 whitelist.json
 ai_whitelist.json
+ai_history.json
 .env
 .git
 .github

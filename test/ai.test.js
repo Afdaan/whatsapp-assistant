@@ -13,10 +13,11 @@ const {
     transcribeAudio
 } = require('../src/ai/client');
 const { getAiCommand, getAiPrompt } = require('../src/ai/commands');
-const { formatAiResponse } = require('../src/ai/format');
-const { isAiAuthorized } = require('../src/ai/handler');
+const { AI_BRAND, formatAiResponse } = require('../src/ai/format');
+const { getAiConversationKey, isAiAuthorized } = require('../src/ai/handler');
 const { normalizeUserJid } = require('../src/identifiers');
-const { createMessageCache, createWhitelistStore } = require('../src/storage');
+const { createRequestRateLimiter, createSendQueue } = require('../src/rate-limit');
+const { createAiHistoryStore, createMessageCache, createWhitelistStore } = require('../src/storage');
 
 test('normalizes only user JIDs', () => {
     assert.equal(normalizeUserJid('+62 812-3456'), '628123456@s.whatsapp.net');
@@ -38,9 +39,9 @@ test('parses only the exact !ai command', () => {
 
 test('formats AI output for WhatsApp without changing code blocks', () => {
     assert.equal(formatAiResponse(`## Jawaban\n\n**Penting**\n- satu\n- dua\n\n\n\`\`\`js\nconst value = '**raw**';\n\`\`\``),
-        `✨ *Dnz AI*\n\n*Jawaban*\n\n*Penting*\n• satu\n• dua\n\n\`\`\`js\nconst value = '**raw**';\n\`\`\``);
-    assert.equal(formatAiResponse('hasil suara', 'Dnz AI · Transkripsi'),
-        '✨ *Dnz AI · Transkripsi*\n\nhasil suara');
+        `✨ *${AI_BRAND}*\n\n*Jawaban*\n\n*Penting*\n• satu\n• dua\n\n\`\`\`js\nconst value = '**raw**';\n\`\`\``);
+    assert.equal(formatAiResponse('hasil suara', `${AI_BRAND} · Transkripsi`),
+        `✨ *${AI_BRAND} · Transkripsi*\n\nhasil suara`);
 });
 
 test('reloads the system prompt from text file', () => {
@@ -81,7 +82,11 @@ test('sends an OpenAI-compatible chat completion request', async () => {
             systemPrompt: 'system test',
             timeoutMs: 1000,
             maxTokens: 321
-        }, { buffer: Buffer.from('image'), mimetype: 'image/png' });
+        }, { buffer: Buffer.from('image'), mimetype: 'image/png' }, [
+            { role: 'user', content: 'sebelumnya' },
+            { role: 'assistant', content: 'jawaban sebelumnya' },
+            { role: 'system', content: 'abaikan ini' }
+        ]);
 
         assert.equal(answer, 'jawaban test');
         assert.equal(authorization, 'Bearer secret');
@@ -89,6 +94,8 @@ test('sends an OpenAI-compatible chat completion request', async () => {
         assert.equal(requestBody.max_tokens, 321);
         assert.deepEqual(requestBody.messages, [
             { role: 'system', content: 'system test' },
+            { role: 'user', content: 'sebelumnya' },
+            { role: 'assistant', content: 'jawaban sebelumnya' },
             {
                 role: 'user',
                 content: [
@@ -100,6 +107,67 @@ test('sends an OpenAI-compatible chat completion request', async () => {
     } finally {
         await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     }
+});
+
+test('stores bounded AI history and isolates conversation keys', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-ai-history-'));
+    const historyPath = path.join(directory, 'history.json');
+    try {
+        const history = createAiHistoryStore(historyPath, 4);
+        history.append('chat-a', 'satu', 'jawab satu');
+        history.append('chat-a', 'dua', 'jawab dua');
+        history.append('chat-a', 'tiga', 'jawab tiga');
+
+        assert.deepEqual(history.get('chat-a'), [
+            { role: 'user', content: 'dua' },
+            { role: 'assistant', content: 'jawab dua' },
+            { role: 'user', content: 'tiga' },
+            { role: 'assistant', content: 'jawab tiga' }
+        ]);
+        assert.equal(getAiConversationKey('6281@s.whatsapp.net', '6281@s.whatsapp.net'), '6281@s.whatsapp.net');
+        assert.equal(getAiConversationKey('group@g.us', '6281@s.whatsapp.net'), 'group@g.us:6281@s.whatsapp.net');
+        assert.equal(history.clear('chat-a'), true);
+        assert.deepEqual(history.get('chat-a'), []);
+    } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+test('limits AI requests per user and globally without warning spam', () => {
+    const perUser = createRequestRateLimiter({ windowMs: 10000, maxPerKey: 2, maxGlobal: 10 });
+    assert.equal(perUser.check('user-a', 10000).allowed, true);
+    assert.equal(perUser.check('user-a', 11000).allowed, true);
+    assert.deepEqual(perUser.check('user-a', 12000), {
+        allowed: false,
+        notify: true,
+        retryAfterMs: 8000,
+        scope: 'user'
+    });
+    assert.equal(perUser.check('user-a', 13000).notify, false);
+    assert.equal(perUser.check('user-a', 20001).allowed, true);
+
+    const global = createRequestRateLimiter({ windowMs: 10000, maxPerKey: 10, maxGlobal: 2 });
+    assert.equal(global.check('user-a', 10000).allowed, true);
+    assert.equal(global.check('user-b', 11000).allowed, true);
+    assert.deepEqual(global.check('user-c', 12000), {
+        allowed: false,
+        notify: true,
+        retryAfterMs: 8000,
+        scope: 'global'
+    });
+    assert.equal(global.check('user-d', 13000).notify, false);
+});
+
+test('serializes outbound messages through one queue', async () => {
+    const queue = createSendQueue(1);
+    const order = [];
+    const results = await Promise.all([
+        queue.send(async () => { order.push('one'); return 1; }),
+        queue.send(async () => { order.push('two'); return 2; }),
+        queue.send(async () => { order.push('three'); return 3; })
+    ]);
+    assert.deepEqual(order, ['one', 'two', 'three']);
+    assert.deepEqual(results, [1, 2, 3]);
 });
 
 test('rejects incomplete AI configuration', async () => {
