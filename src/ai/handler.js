@@ -61,6 +61,7 @@ async function handleAiMessage({
     content,
     contextInfo,
     isFromMe,
+    isViewOnce,
     msg,
     myJid,
     realMsg,
@@ -69,13 +70,16 @@ async function handleAiMessage({
     upsertType,
     groupWhitelist
 }) {
+    if (remoteJid === 'status@broadcast' || isViewOnce) return false;
+
     const quotedRealMsg = getRealMessage(contextInfo?.quotedMessage);
     const inputMedia = findAiMedia(realMsg, quotedRealMsg);
     const isGroup = remoteJid.endsWith('@g.us');
     const autoMediaCommand = inputMedia && !isGroup && !isFromMe
         ? { name: 'ai', prompt: '' }
         : null;
-    const command = getAiCommand(content) || autoMediaCommand;
+    const explicitCommand = getAiCommand(content);
+    const command = explicitCommand || autoMediaCommand;
     if (!command || upsertType !== 'notify') return false;
 
     const senderJid = normalizeUserJid(isFromMe ? myJid : (msg.key.participant || remoteJid));
@@ -89,6 +93,7 @@ async function handleAiMessage({
         remoteJid,
         senderJid
     })) {
+        if (!explicitCommand) return false;
         console.warn(`[AI] Denied request from ${senderJid || 'unknown'} in ${remoteJid}`);
         if (isGroup && (isFromMe || (senderJid && aiWhitelist.includes(senderJid)))) {
             const text = AI_CONFIG.allowGroups

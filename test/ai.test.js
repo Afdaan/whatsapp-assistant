@@ -14,11 +14,12 @@ const {
 } = require('../src/ai/client');
 const { getAiCommand, getAiPrompt } = require('../src/ai/commands');
 const { AI_BRAND, formatAiResponse } = require('../src/ai/format');
-const { getAiConversationKey, isAiAuthorized } = require('../src/ai/handler');
+const { getAiConversationKey, handleAiMessage, isAiAuthorized } = require('../src/ai/handler');
 const { DEFAULT_PROMPTS, findAiMedia } = require('../src/ai/media-input');
 const { normalizeUserJid } = require('../src/identifiers');
 const { createRequestRateLimiter, createSendQueue } = require('../src/rate-limit');
 const { createAiHistoryStore, createMessageCache, createWhitelistStore } = require('../src/storage');
+const { handleOwnerCommand } = require('../src/whatsapp/owner-commands');
 
 test('normalizes only user JIDs', () => {
     assert.equal(normalizeUserJid('+62 812-3456'), '628123456@s.whatsapp.net');
@@ -126,6 +127,44 @@ test('detects direct and quoted WhatsApp media', () => {
     assert.deepEqual(findAiMedia(null, { audioMessage: audio }), { data: audio, type: 'audio' });
     assert.equal(findAiMedia({}, {}), null);
     assert.match(DEFAULT_PROMPTS.video, /video/i);
+});
+
+test('never consumes WhatsApp status media in the AI handler', async () => {
+    const handled = await handleAiMessage({
+        content: '',
+        contextInfo: null,
+        isFromMe: false,
+        realMsg: { imageMessage: { mimetype: 'image/jpeg' } },
+        remoteJid: 'status@broadcast',
+        upsertType: 'notify'
+    });
+    assert.equal(handled, false);
+});
+
+test('never consumes View Once or unauthorized implicit media', async () => {
+    const base = {
+        aiWhitelist: { includes: () => false },
+        content: '',
+        contextInfo: null,
+        isFromMe: false,
+        msg: { key: {} },
+        myJid: 'owner@s.whatsapp.net',
+        realMsg: { imageMessage: { mimetype: 'image/jpeg' } },
+        remoteJid: 'user@s.whatsapp.net',
+        upsertType: 'notify'
+    };
+
+    assert.equal(await handleAiMessage({ ...base, isViewOnce: true }), false);
+    assert.equal(await handleAiMessage({ ...base, isViewOnce: false }), false);
+});
+
+test('does not consume unknown owner dot commands', async () => {
+    assert.equal(await handleOwnerCommand({
+        content: '.unknown',
+        contextInfo: null,
+        isFromMe: true,
+        remoteJid: 'owner@s.whatsapp.net'
+    }), false);
 });
 
 test('stores bounded AI history and isolates conversation keys', () => {

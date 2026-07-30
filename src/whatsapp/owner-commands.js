@@ -94,6 +94,8 @@ async function handleOwnerCommand({ aiWhitelist, content, contextInfo, isFromMe,
                 }
             }
         }
+    } else {
+        return false;
     }
 
     return true;

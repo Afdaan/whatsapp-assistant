@@ -148,6 +148,7 @@ async function startAssistant() {
             content,
             contextInfo,
             isFromMe,
+            isViewOnce,
             msg,
             myJid,
             realMsg,
