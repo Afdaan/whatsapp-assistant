@@ -32,6 +32,7 @@ const AI_CONFIG = {
 module.exports = {
     AI_CONFIG,
     AI_HISTORY_PATH: path.join(ROOT_DIR, 'ai_history.json'),
+    AI_STATE_PATH: path.join(ROOT_DIR, 'ai_state.json'),
     AI_WHITELIST_PATH: path.join(ROOT_DIR, 'ai_whitelist.json'),
     AUTH_DIR: path.join(ROOT_DIR, 'auth_info'),
     DELETED_MEDIA_DIR: path.join(ROOT_DIR, 'deleted_media'),

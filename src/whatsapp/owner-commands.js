@@ -3,20 +3,23 @@ const { TIMEZONE } = require('../config');
 const { downloadMedia } = require('../media');
 const { cleanDeviceJid, getRealMessage } = require('./message-utils');
 
-async function handleOwnerCommand({ aiWhitelist, content, contextInfo, isFromMe, msgCache, myJid, remoteJid, sock, whitelist }) {
-    if (!isFromMe || !content.startsWith('.')) return false;
+async function handleOwnerCommand({ aiState, aiWhitelist, content, contextInfo, isFromMe, msgCache, myJid, remoteJid, sock, whitelist }) {
+    if (!isFromMe || typeof content !== 'string') return false;
 
-    const args = content.split(' ');
-    const command = args[0].slice(1).toLowerCase();
+    const trimmed = content.trim();
+    if (!trimmed.startsWith('.') && !trimmed.startsWith('/')) return false;
+
+    const args = trimmed.slice(1).split(/\s+/);
+    const command = args[0].toLowerCase();
     let target = remoteJid;
 
-    if (args[1]) {
+    if (args[1] && !['on', 'off', 'enable', 'disable', 'status'].includes(args[1].toLowerCase())) {
         target = args[1].includes('@') ? args[1] : `${args[1].replace(/[^0-9]/g, '')}@s.whatsapp.net`;
     } else if (contextInfo?.participant) {
         target = contextInfo.participant;
     }
 
-    if (await handleAiAccessCommand({ command, target, sock, myJid, whitelist: aiWhitelist })) return true;
+    if (await handleAiAccessCommand({ aiState, args, command, target, sock, myJid, whitelist: aiWhitelist })) return true;
 
     if (command === 'add') {
         if (!target) {

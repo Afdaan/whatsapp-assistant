@@ -18,7 +18,7 @@ const { getAiConversationKey, handleAiMessage, isAiAuthorized } = require('../sr
 const { DEFAULT_PROMPTS, findAiMedia } = require('../src/ai/media-input');
 const { normalizeUserJid } = require('../src/identifiers');
 const { createRequestRateLimiter, createSendQueue } = require('../src/rate-limit');
-const { createAiHistoryStore, createMessageCache, createWhitelistStore } = require('../src/storage');
+const { createAiHistoryStore, createAiStateStore, createMessageCache, createWhitelistStore } = require('../src/storage');
 const { handleOwnerCommand } = require('../src/whatsapp/owner-commands');
 
 test('normalizes only user JIDs', () => {
@@ -442,3 +442,150 @@ test('allows all members only inside whitelisted groups', () => {
         senderJid: 'owner@s.whatsapp.net'
     }), true);
 });
+
+test('persists AI state and defaults to enabled', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-ai-state-'));
+    const statePath = path.join(directory, 'ai_state.json');
+
+    try {
+        const state = createAiStateStore(statePath);
+        assert.equal(state.isEnabled(), true);
+        assert.equal(state.setEnabled(false), true);
+        assert.equal(state.isEnabled(), false);
+
+        const reloaded = createAiStateStore(statePath);
+        assert.equal(reloaded.isEnabled(), false);
+        assert.equal(reloaded.setEnabled(true), true);
+        assert.equal(reloaded.isEnabled(), true);
+    } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+test('handles owner slash and dot commands for AI enable/disable toggle', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-ai-toggle-'));
+    const statePath = path.join(directory, 'ai_state.json');
+    const whitelistPath = path.join(directory, 'ai_whitelist.json');
+
+    try {
+        const aiState = createAiStateStore(statePath);
+        const aiWhitelist = createWhitelistStore(whitelistPath, normalizeUserJid);
+        const sent = [];
+        const sock = {
+            sendMessage: async (jid, payload) => {
+                sent.push({ jid, payload });
+                return {};
+            }
+        };
+
+        // Non-owner should be rejected / ignored
+        const nonOwnerRes = await handleOwnerCommand({
+            aiState,
+            aiWhitelist,
+            content: '/ai off',
+            contextInfo: null,
+            isFromMe: false,
+            msgCache: new Map(),
+            myJid: 'owner@s.whatsapp.net',
+            remoteJid: 'user@s.whatsapp.net',
+            sock,
+            whitelist: aiWhitelist
+        });
+        assert.equal(nonOwnerRes, false);
+        assert.equal(aiState.isEnabled(), true);
+
+        // Owner toggles off via slash command
+        const offRes = await handleOwnerCommand({
+            aiState,
+            aiWhitelist,
+            content: '/ai off',
+            contextInfo: null,
+            isFromMe: true,
+            msgCache: new Map(),
+            myJid: 'owner@s.whatsapp.net',
+            remoteJid: 'owner@s.whatsapp.net',
+            sock,
+            whitelist: aiWhitelist
+        });
+        assert.equal(offRes, true);
+        assert.equal(aiState.isEnabled(), false);
+        assert.match(sent[sent.length - 1].payload.text, /AI Assistant is OFF/i);
+
+        // Owner checks status via dot command
+        const statusRes = await handleOwnerCommand({
+            aiState,
+            aiWhitelist,
+            content: '.ai status',
+            contextInfo: null,
+            isFromMe: true,
+            msgCache: new Map(),
+            myJid: 'owner@s.whatsapp.net',
+            remoteJid: 'owner@s.whatsapp.net',
+            sock,
+            whitelist: aiWhitelist
+        });
+        assert.equal(statusRes, true);
+        assert.match(sent[sent.length - 1].payload.text, /OFF/);
+
+        // Owner toggles on via dot command
+        const onRes = await handleOwnerCommand({
+            aiState,
+            aiWhitelist,
+            content: '.ai on',
+            contextInfo: null,
+            isFromMe: true,
+            msgCache: new Map(),
+            myJid: 'owner@s.whatsapp.net',
+            remoteJid: 'owner@s.whatsapp.net',
+            sock,
+            whitelist: aiWhitelist
+        });
+        assert.equal(onRes, true);
+        assert.equal(aiState.isEnabled(), true);
+        assert.match(sent[sent.length - 1].payload.text, /AI Assistant is ON/i);
+    } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+test('blocks AI requests when AI assistant is disabled', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-ai-handler-toggle-'));
+    const statePath = path.join(directory, 'ai_state.json');
+
+    try {
+        const aiState = createAiStateStore(statePath);
+        aiState.setEnabled(false);
+
+        const sent = [];
+        const sock = {
+            sendMessage: async (jid, payload, options) => {
+                sent.push({ jid, payload, options });
+                return {};
+            }
+        };
+
+        const handled = await handleAiMessage({
+            aiHistory: { get: () => [], append: () => {}, clear: () => true },
+            aiRateLimiter: { check: () => ({ allowed: true }) },
+            aiState,
+            aiWhitelist: { includes: () => true },
+            content: '!ai halo',
+            contextInfo: null,
+            isFromMe: false,
+            isViewOnce: false,
+            msg: { key: { remoteJid: '628123456@s.whatsapp.net' } },
+            myJid: '628999999@s.whatsapp.net',
+            realMsg: { conversation: '!ai halo' },
+            remoteJid: '628123456@s.whatsapp.net',
+            sock,
+            upsertType: 'notify'
+        });
+
+        assert.equal(handled, true);
+        assert.equal(sent.length, 1);
+        assert.match(sent[0].payload.text, /dinonaktifkan oleh owner/i);
+    } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+

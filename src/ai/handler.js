@@ -20,7 +20,34 @@ function isAiAuthorized({ aiWhitelist, allowGroups, groupWhitelist, isFromMe, re
     return isFromMe || Boolean(senderJid && aiWhitelist.includes(senderJid));
 }
 
-async function handleAiAccessCommand({ command, target, sock, myJid, whitelist }) {
+async function handleAiAccessCommand({ aiState, args = [], command, target, sock, myJid, whitelist }) {
+    if (command === 'ai' || command === 'aistatus' || command === 'aion' || command === 'aioff') {
+        const action = (command === 'aion' ? 'on' : command === 'aioff' ? 'off' : args[1] || '').toLowerCase();
+
+        if (action === 'on' || action === 'enable') {
+            aiState?.setEnabled(true);
+            await sock.sendMessage(myJid, {
+                text: '✅ *AI Assistant is ON.*\nFitur AI sekarang aktif dan dapat digunakan oleh user/grup yang terdaftar di whitelist.'
+            });
+            return true;
+        }
+
+        if (action === 'off' || action === 'disable') {
+            aiState?.setEnabled(false);
+            await sock.sendMessage(myJid, {
+                text: '❌ *AI Assistant is OFF.*\nFitur AI sekarang dinonaktifkan secara global.'
+            });
+            return true;
+        }
+
+        const isEnabled = aiState ? aiState.isEnabled() : true;
+        const statusText = isEnabled ? '✅ ON' : '❌ OFF';
+        await sock.sendMessage(myJid, {
+            text: `🤖 *AI Assistant Status:* ${statusText}\n\nKetik */ai on* (atau *.ai on*) untuk mengaktifkan, */ai off* (atau *.ai off*) untuk menonaktifkan.`
+        });
+        return true;
+    }
+
     if (command === 'aiadd') {
         const aiTarget = normalizeUserJid(target);
         if (!aiTarget) {
@@ -47,7 +74,9 @@ async function handleAiAccessCommand({ command, target, sock, myJid, whitelist }
     if (command === 'ailist') {
         const entries = whitelist.entries();
         const listText = entries.length > 0 ? entries.map(id => `- ${id}`).join('\n') : 'AI whitelist kosong.';
-        await sock.sendMessage(myJid, { text: `🤖 *AI Whitelist:*\n${listText}` });
+        const isEnabled = aiState ? aiState.isEnabled() : true;
+        const statusText = isEnabled ? '✅ ON' : '❌ OFF';
+        await sock.sendMessage(myJid, { text: `🤖 *AI Assistant Status:* ${statusText}\n\n📋 *AI Whitelist:*\n${listText}` });
         return true;
     }
 
@@ -55,9 +84,10 @@ async function handleAiAccessCommand({ command, target, sock, myJid, whitelist }
 }
 
 async function handleAiMessage({
-    aiWhitelist,
     aiHistory,
     aiRateLimiter,
+    aiState,
+    aiWhitelist,
     content,
     contextInfo,
     isFromMe,
@@ -101,6 +131,15 @@ async function handleAiMessage({
                 : '⚠️ AI hanya aktif di chat pribadi.';
             await sock.sendMessage(remoteJid, { text }, { quoted: msg });
         }
+        return true;
+    }
+
+    if (aiState && typeof aiState.isEnabled === 'function' && !aiState.isEnabled()) {
+        if (!explicitCommand) return false;
+        console.warn(`[AI] Request blocked - AI Assistant is disabled by owner`);
+        await sock.sendMessage(remoteJid, {
+            text: `⚠️ *${AI_BRAND}*\n\nFitur AI Assistant saat ini dinonaktifkan oleh owner.`
+        }, { quoted: msg });
         return true;
     }
 

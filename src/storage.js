@@ -130,4 +130,48 @@ function createAiHistoryStore(filePath, maxMessages) {
     };
 }
 
-module.exports = { createAiHistoryStore, createMessageCache, createWhitelistStore };
+function createAiStateStore(filePath, defaultState = { enabled: true }) {
+    let state = { ...defaultState };
+
+    if (fs.existsSync(filePath) && fs.lstatSync(filePath).isFile()) {
+        try {
+            const stored = fs.readJsonSync(filePath);
+            if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
+                if (typeof stored.enabled === 'boolean') {
+                    state.enabled = stored.enabled;
+                }
+            }
+        } catch (error) {
+            console.error(`Failed to load AI state ${filePath}: ${error.message}`);
+        }
+    }
+
+    const save = () => {
+        try {
+            fs.writeJsonSync(filePath, state);
+            fs.chmodSync(filePath, 0o600);
+            return true;
+        } catch (error) {
+            console.error(`Failed to save AI state: ${error.message}`);
+            return false;
+        }
+    };
+
+    return {
+        isEnabled() {
+            return state.enabled !== false;
+        },
+        setEnabled(enabled) {
+            const nextValue = Boolean(enabled);
+            const changed = state.enabled !== nextValue;
+            state.enabled = nextValue;
+            save();
+            return changed;
+        },
+        get() {
+            return { ...state };
+        }
+    };
+}
+
+module.exports = { createAiHistoryStore, createAiStateStore, createMessageCache, createWhitelistStore };

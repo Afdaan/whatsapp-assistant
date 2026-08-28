@@ -10,9 +10,10 @@ const fs = require('fs-extra');
 const qrcode = require('qrcode-terminal');
 const { handleAiMessage } = require('./ai/handler');
 const {
-    AI_WHITELIST_PATH,
     AI_CONFIG,
     AI_HISTORY_PATH,
+    AI_STATE_PATH,
+    AI_WHITELIST_PATH,
     AUTH_DIR,
     DELETED_MEDIA_DIR,
     MAX_CACHE_SIZE,
@@ -23,7 +24,7 @@ const {
 const { normalizeUserJid } = require('./identifiers');
 const { downloadMedia } = require('./media');
 const { createRequestRateLimiter, createSendQueue } = require('./rate-limit');
-const { createAiHistoryStore, createMessageCache, createWhitelistStore } = require('./storage');
+const { createAiHistoryStore, createAiStateStore, createMessageCache, createWhitelistStore } = require('./storage');
 const { handleAntiDelete, handleStatus, handleViewOnce } = require('./whatsapp/content-handlers');
 const { checkIsViewOnce, getContextInfo, getMessageContent, getMyJid, getRealMessage } = require('./whatsapp/message-utils');
 const { handleOwnerCommand } = require('./whatsapp/owner-commands');
@@ -35,6 +36,7 @@ fs.ensureDirSync(DELETED_MEDIA_DIR);
 const whitelist = createWhitelistStore(WHITELIST_PATH);
 const aiWhitelist = createWhitelistStore(AI_WHITELIST_PATH, normalizeUserJid);
 const aiHistory = createAiHistoryStore(AI_HISTORY_PATH, AI_CONFIG.historyMaxMessages);
+const aiState = createAiStateStore(AI_STATE_PATH);
 const aiRateLimiter = createRequestRateLimiter({
     windowMs: AI_CONFIG.rateLimitWindowMs,
     maxPerKey: AI_CONFIG.rateLimitMaxRequests,
@@ -130,6 +132,7 @@ async function startAssistant() {
         }
 
         if (await handleOwnerCommand({
+            aiState,
             aiWhitelist,
             content,
             contextInfo,
@@ -144,6 +147,7 @@ async function startAssistant() {
         if (await handleAiMessage({
             aiHistory,
             aiRateLimiter,
+            aiState,
             aiWhitelist,
             content,
             contextInfo,

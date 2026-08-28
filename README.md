@@ -74,12 +74,15 @@ Management commands can only be triggered by the account owner. Whitelisted user
 | `!voice <text>` | Generate and send speech audio. OGG/Opus responses are sent as voice notes. Alias: `!tts`. |
 | `!transcribe` | Reply to a voice note/audio to transcribe it. Alias: `!stt`. |
 | `!video <prompt>` | Start an asynchronous video generation job, poll it, then send the resulting video. |
-| `.aiadd 6281xx` | Owner-only. Grant AI access to a phone number. |
+| `/ai on` or `.ai on` | Owner-only. Enable the AI assistant globally. |
+| `/ai off` or `.ai off` | Owner-only. Disable the AI assistant globally. |
+| `/ai status` or `.ai status` | Owner-only. Check AI assistant enabled status. |
+| `.aiadd 6281xx` | Owner-only. Grant AI access to a phone number (also works with `/aiadd`). |
 | `.aiadd <JID>` | Owner-only. Grant access to an exact `@s.whatsapp.net` or `@lid` identity. Replying to a private message also works. |
-| `.aidel <number/JID>` | Owner-only. Revoke AI access. |
-| `.ailist` | Owner-only. Show the AI whitelist. |
+| `.aidel <number/JID>` | Owner-only. Revoke AI access (also works with `/aidel`). |
+| `.ailist` | Owner-only. Show the AI whitelist and global AI status (also works with `/ailist`). |
 
-AI access is intentionally separate from the status/anti-delete whitelist. The AI whitelist protects private chat and media commands. Group usage is disabled by default. When `AI_ALLOW_GROUPS=true`, every member of an explicitly whitelisted group can use AI commands; run `.add` inside the group or `.add <group-JID>`. Other groups remain blocked. Unauthorized private-chat AI commands receive no reply. Each user can run only one AI request at a time, and downloaded/generated media is rejected above `AI_MEDIA_MAX_BYTES`.
+AI access is intentionally separate from the status/anti-delete whitelist. The AI whitelist protects private chat and media commands. The owner can globally toggle AI availability using `/ai on` or `/ai off` (state persisted in `ai_state.json`). Group usage is disabled by default. When `AI_ALLOW_GROUPS=true`, every member of an explicitly whitelisted group can use AI commands; run `.add` inside the group or `.add <group-JID>`. Other groups remain blocked. Unauthorized private-chat AI commands receive no reply. Each user can run only one AI request at a time, and downloaded/generated media is rejected above `AI_MEDIA_MAX_BYTES`.
 
 AI requests are rate-limited per user and globally. Repeated denied requests receive at most one warning per limit window. All outgoing WhatsApp messages also use a shared send queue to avoid bursts. These controls reduce spam risk but cannot guarantee that WhatsApp will never restrict the account.
 
@@ -139,3 +142,4 @@ Required AI configuration:
 - `whitelist.json`: List of monitored VIP chats (Docker mounted).
 - `ai_whitelist.json`: Separate list of users allowed to invoke the AI assistant (Docker mounted).
 - `ai_history.json`: Local bounded AI conversation memory (Docker mounted, gitignored).
+- `ai_state.json`: Global AI enable/disable toggle state (Docker mounted, gitignored).

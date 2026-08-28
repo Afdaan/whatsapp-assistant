@@ -10,6 +10,7 @@ services:
       - ./whitelist.json:/app/whitelist.json
       - ./ai_whitelist.json:/app/ai_whitelist.json
       - ./ai_history.json:/app/ai_history.json
+      - ./ai_state.json:/app/ai_state.json
       - ./msg_cache.json:/app/msg_cache.json
       - ./prompts:/app/prompts:ro
     environment:

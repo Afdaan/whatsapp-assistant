@@ -11,6 +11,7 @@ msg_cache.json
 whitelist.json
 ai_whitelist.json
 ai_history.json
+ai_state.json
 
 # Environment & Logs
 .env
