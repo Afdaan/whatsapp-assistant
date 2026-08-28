@@ -548,7 +548,7 @@ test('handles owner slash and dot commands for AI enable/disable toggle', async 
     }
 });
 
-test('blocks AI requests when AI assistant is disabled', async () => {
+test('silently ignores AI requests when AI assistant is disabled', async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-ai-handler-toggle-'));
     const statePath = path.join(directory, 'ai_state.json');
 
@@ -581,9 +581,8 @@ test('blocks AI requests when AI assistant is disabled', async () => {
             upsertType: 'notify'
         });
 
-        assert.equal(handled, true);
-        assert.equal(sent.length, 1);
-        assert.match(sent[0].payload.text, /dinonaktifkan oleh owner/i);
+        assert.equal(handled, false);
+        assert.equal(sent.length, 0);
     } finally {
         fs.rmSync(directory, { recursive: true, force: true });
     }

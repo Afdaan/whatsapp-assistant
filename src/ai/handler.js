@@ -135,12 +135,10 @@ async function handleAiMessage({
     }
 
     if (aiState && typeof aiState.isEnabled === 'function' && !aiState.isEnabled()) {
-        if (!explicitCommand) return false;
-        console.warn(`[AI] Request blocked - AI Assistant is disabled by owner`);
-        await sock.sendMessage(remoteJid, {
-            text: `⚠️ *${AI_BRAND}*\n\nFitur AI Assistant saat ini dinonaktifkan oleh owner.`
-        }, { quoted: msg });
-        return true;
+        if (explicitCommand) {
+            console.warn(`[AI] Ignored request - AI Assistant is disabled by owner`);
+        }
+        return false;
     }
 
     const rateLimit = aiRateLimiter.check(senderJid || conversationKey);
